@@ -134,16 +134,16 @@ def dibujar_plantilla(canvas, doc):
     canvas.restoreState()
 
 # =========================================================
-# FUNCIÓN PARA GENERAR PDF FILTRADO POR SEMANA
+# FUNCIÓN PARA GENERAR PDF CON TABLAS POR INSPECTOR
 # =========================================================
-def generar_pdf_informe(df_filtrado, semana_str):
+def generar_pdf_informe(df_fecha, fecha_str):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
         pagesize=letter,
         rightMargin=30,
         leftMargin=30,
-        topMargin=4.5 * cm,
+        topMargin=4.5 * cm, # Espacio para la franja y el logo
         bottomMargin=2.2 * cm
     )
     
@@ -172,19 +172,19 @@ def generar_pdf_informe(df_filtrado, semana_str):
 
     story = [
         Paragraph("INFORME INSPECCIÓN", title_style),
-        Paragraph(f"<b>Período:</b> {semana_str}", subtitle_style),
+        Paragraph(f"<b>Fecha del Reporte:</b> {fecha_str}", subtitle_style),
         Spacer(1, 6)
     ]
 
-    if not df_filtrado.empty:
-        inspectores_grupos = df_filtrado.groupby('inspector', sort=False)
+    if not df_fecha.empty:
+        inspectores_grupos = df_fecha.groupby('inspector', sort=False)
         total_grupos = len(inspectores_grupos)
         
         for idx, (inspector_nom, group_df) in enumerate(inspectores_grupos):
             story.append(Paragraph(f"👷‍♂️ Inspector: <b>{inspector_nom}</b>", inspector_heading_style))
             
             table_data = [[
-                Paragraph("Fecha / Planta", cell_header_style),
+                Paragraph("Planta / Tag", cell_header_style),
                 Paragraph("Actividad Realizada", cell_header_style),
                 Paragraph("Avance", cell_header_style),
                 Paragraph("Estado", cell_header_style),
@@ -192,7 +192,6 @@ def generar_pdf_informe(df_filtrado, semana_str):
             ]]
             
             for _, row in group_df.iterrows():
-                fecha_reg = row.get("fecha", "-")
                 planta = row.get("planta", "-")
                 tag = row.get("tag_equipo", "-")
                 actividad = row.get("actividad_realizada", "-")
@@ -201,14 +200,14 @@ def generar_pdf_informe(df_filtrado, semana_str):
                 obs = row.get("observaciones", "-")
                 
                 table_data.append([
-                    Paragraph(f"<b>Fecha:</b> {fecha_reg}<br/><b>Planta:</b> {planta}<br/><b>TAG:</b> {tag}", cell_body_style),
+                    Paragraph(f"<b>Planta:</b> {planta}<br/><b>TAG:</b> {tag}", cell_body_style),
                     Paragraph(actividad, cell_body_style),
                     Paragraph(avance, cell_body_style),
                     Paragraph(estado, cell_body_style),
                     Paragraph(obs if obs else "-", cell_body_style)
                 ])
                 
-            t = Table(table_data, colWidths=[110, 150, 50, 92, 150])
+            t = Table(table_data, colWidths=[100, 160, 50, 92, 150])
             t.setStyle(TableStyle([
                 ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
                 ('ALIGN', (0,0), (-1,-1), 'LEFT'),
@@ -232,16 +231,18 @@ def generar_pdf_informe(df_filtrado, semana_str):
                 story.append(divider_table)
                 story.append(Spacer(1, 10))
 
+    # onFirstPage y onLaterPages garantizan que el fondo se dibuje DEBAJO del texto
     doc.build(story, onFirstPage=dibujar_plantilla, onLaterPages=dibujar_plantilla)
     buffer.seek(0)
     return buffer
 
 # =========================================================
-# FUNCIÓN PARA GENERAR WORD FILTRADO POR SEMANA
+# FUNCIÓN PARA GENERAR WORD CON TABLAS POR INSPECTOR
 # =========================================================
-def generar_word_informe(df_filtrado, semana_str):
+def generar_word_informe(df_fecha, fecha_str):
     doc = Document()
     
+    # Inyectar color de fondo #F8FAF6 en el documento Word
     try:
         background = parse_xml(r'<w:background {} w:color="F8FAF6"/>'.format(nsdecls('w')))
         doc.element.insert(0, background)
@@ -287,7 +288,7 @@ def generar_word_informe(df_filtrado, semana_str):
     text_run.font.size = Pt(7)
     text_run.font.color.rgb = RGBColor(107, 114, 128)
 
-    # 4. Título y período
+    # 4. Título y fecha
     title_p = doc.add_paragraph()
     title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     title_run = title_p.add_run("INFORME INSPECCIÓN")
@@ -297,15 +298,15 @@ def generar_word_informe(df_filtrado, semana_str):
     
     date_p = doc.add_paragraph()
     date_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    date_run = date_p.add_run(f"Período: {semana_str}")
+    date_run = date_p.add_run(f"Fecha del Reporte: {fecha_str}")
     date_run.font.size = Pt(11)
     date_run.font.color.rgb = RGBColor(75, 85, 99)
     
     doc.add_paragraph()
 
     # 5. Tablas agrupadas por Inspector
-    if not df_filtrado.empty:
-        inspectores_grupos = list(df_filtrado.groupby('inspector', sort=False))
+    if not df_fecha.empty:
+        inspectores_grupos = list(df_fecha.groupby('inspector', sort=False))
         total_grupos = len(inspectores_grupos)
 
         for idx, (inspector_nom, group_df) in enumerate(inspectores_grupos):
@@ -320,7 +321,7 @@ def generar_word_informe(df_filtrado, semana_str):
             table.style = 'Table Grid'
             
             hdr_cells = table.rows[0].cells
-            headers = ["Fecha / Planta", "Actividad Realizada", "Avance", "Estado", "Observaciones"]
+            headers = ["Planta / TAG", "Actividad Realizada", "Avance", "Estado", "Observaciones"]
             for i, header_text in enumerate(headers):
                 hdr_cells[i].text = header_text
                 p = hdr_cells[i].paragraphs[0]
@@ -332,7 +333,7 @@ def generar_word_informe(df_filtrado, semana_str):
 
             for _, row in group_df.iterrows():
                 row_cells = table.add_row().cells
-                row_cells[0].text = f"Fecha: {row.get('fecha', '-')}\nPlanta: {row.get('planta', '-')}\nTAG: {row.get('tag_equipo', '-')}"
+                row_cells[0].text = f"Planta: {row.get('planta', '-')}\nTAG: {row.get('tag_equipo', '-')}"
                 row_cells[1].text = str(row.get("actividad_realizada", "-"))
                 row_cells[2].text = str(row.get("avance", "-"))
                 row_cells[3].text = str(row.get("estado_liberacion", "-"))
@@ -485,16 +486,48 @@ if menu == "📝 Registrar Actividad por Inspector":
 # MÓDULO 2: HISTORIAL E INFORMES EN WORD Y PDF
 # =========================================================
 elif menu == "📊 Historial e Informes":
-    st.subheader("🔍 Consulta de Historial y Generación de Informes por Semana")
+    st.subheader("🔍 Consulta de Historial y Generación de Informes")
     
     with st.spinner("Cargando registros desde Google Sheets..."):
         df_historial = cargar_datos_sheets()
     
-    # ---------------------------------------------------------
-    # TABLA DE FILTROS Y VISTA PREVIA
-    # ---------------------------------------------------------
+    st.markdown("### 📄 Exportar Informe Diarios")
+    col_pdf1, col_pdf2, col_pdf3 = st.columns([2, 1.5, 1.5])
+    
+    with col_pdf1:
+        fecha_informe = st.date_input("🗓️ Selecciona la Fecha del Informe:", datetime.now())
+        fecha_informe_str = str(fecha_informe)
+    
+    df_informe = df_historial[df_historial['fecha'] == fecha_informe_str] if not df_historial.empty and 'fecha' in df_historial.columns else pd.DataFrame()
+    
+    if not df_informe.empty:
+        with col_pdf2:
+            st.write("&nbsp;")
+            pdf_bytes = generar_pdf_informe(df_informe, fecha_informe_str)
+            st.download_button(
+                label="📄 Descargar Informe (PDF)",
+                data=pdf_bytes,
+                file_name=f"INFORME_INSPECCION_{fecha_informe_str}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+        with col_pdf3:
+            st.write("&nbsp;")
+            word_bytes = generar_word_informe(df_informe, fecha_informe_str)
+            st.download_button(
+                label="📝 Descargar Informe (Word)",
+                data=word_bytes,
+                file_name=f"INFORME_INSPECCION_{fecha_informe_str}.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                use_container_width=True
+            )
+    else:
+        st.info("No hay registros guardados para esta fecha para generar informes.")
+
+    st.markdown("---")
+    st.markdown("### 📊 Tabla de Consulta e Historial Completo")
+
     if not df_historial.empty:
-        st.markdown("### 🎛️ Filtros Interactivos de Consulta")
         col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns(5)
         
         with col_f1:
@@ -525,54 +558,18 @@ elif menu == "📊 Historial e Informes":
         if "estado_liberacion" in df_filtrado.columns and filtro_estado != "Todos":
             df_filtrado = df_filtrado[df_filtrado['estado_liberacion'] == filtro_estado]
 
-        st.markdown(f"**Total de registros filtrados:** `{len(df_filtrado)}`")
+        st.markdown(f"**Total de registros encontrados:** `{len(df_filtrado)}`")
         
         st.dataframe(
             df_filtrado, 
             use_container_width=True
         )
-
-        st.markdown("---")
-        st.markdown("### 📄 Exportar Informe con el Filtro de Semana Seleccionado")
         
-        col_exp1, col_exp2, col_exp3 = st.columns([2, 1.5, 1.5])
-        with col_exp1:
-            # Selector de semana específica para el informe
-            semana_informe = st.selectbox("🗓️ Selecciona la Semana para el Informe:", LISTA_SEMANAS, index=idx_semana_defecto)
-        
-        # Filtramos estrictamente por la semana elegida para el informe
-        df_informe_semana = df_historial[df_historial['semana'] == semana_informe] if 'semana' in df_historial.columns else pd.DataFrame()
-        
-        if not df_informe_semana.empty:
-            with col_exp2:
-                st.write("&nbsp;")
-                pdf_bytes = generar_pdf_informe(df_informe_semana, semana_informe)
-                st.download_button(
-                    label="📄 Descargar Informe PDF",
-                    data=pdf_bytes,
-                    file_name=f"INFORME_INSPECCION_{semana_informe.replace(' ', '_')}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True
-                )
-            with col_exp3:
-                st.write("&nbsp;")
-                word_bytes = generar_word_informe(df_informe_semana, semana_informe)
-                st.download_button(
-                    label="📝 Descargar Informe Word",
-                    data=word_bytes,
-                    file_name=f"INFORME_INSPECCION_{semana_informe.replace(' ', '_')}.docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    use_container_width=True
-                )
-        else:
-            st.warning(f"⚠️ No hay registros guardados en la nube para la **{semana_informe}**.")
-
-        st.markdown("---")
         csv_data = df_filtrado.to_csv(index=False).encode('utf-8')
         st.download_button(
-            label="📥 Descargar tabla filtrada actual a CSV",
+            label="📥 Descargar copia local a CSV",
             data=csv_data,
-            file_name=f"historial_actividades_filtrado_{datetime.now().strftime('%Y%m%d')}.csv",
+            file_name=f"historial_actividades_{datetime.now().strftime('%Y%m%d')}.csv",
             mime="text/csv"
         )
     else:
