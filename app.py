@@ -42,11 +42,11 @@ init_db()
 # LISTA DE INSPECTORES Y CONFIGURACIÓN
 # =========================================================
 LISTA_INSPECTORES = [
-    "Inspector 1",
-    "Inspector 2",
-    "Inspector 3",
-    "Inspector 4",
-    "Inspector 5"
+    "Juan Navarrete",
+    "Jorge Hernandez",
+    "Harold Castillo",
+    "Miguel Chirinos",
+    "Arlem Sarmiento"
 ]
 
 ESTADOS_LIBERACION = [
