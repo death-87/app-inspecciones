@@ -65,11 +65,11 @@ st.sidebar.title("📌 Menú Principal")
 opcion_menu = st.sidebar.radio("Ir a:", ["📝 Nuevo Reporte Diario", "📊 Historial y Consultas"])
 
 INSPECTORES = [
-    "Inspector 1", 
-    "Inspector 2", 
-    "Inspector 3", 
-    "Inspector 4", 
-    "Inspector 5"
+    "Juan Navarrete", 
+    "Jorge Hernandez", 
+    "Miguel Chirinos", 
+    "Harold Castillo", 
+    "Arlem Sarmiento"
 ]
 
 # =========================================================
