@@ -167,7 +167,7 @@ def dibujar_plantilla(canvas, doc):
     canvas.drawRightString(letter[0] - 30, 16, f"Pág. {canvas.getPageNumber()}")
     canvas.restoreState()
 
-def generar_pdf_informe(df_filtrado, semana_str):
+def generar_pdf_informe(df_filtrado, titulo_doc, subtitulo_doc):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -179,15 +179,15 @@ def generar_pdf_informe(df_filtrado, semana_str):
     )
     
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=18, leading=22, textColor=colors.HexColor('#1E3A8A'), alignment=1, spaceAfter=4)
+    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=16, leading=20, textColor=colors.HexColor('#1E3A8A'), alignment=1, spaceAfter=4)
     subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=11, leading=14, textColor=colors.HexColor('#4B5563'), alignment=1, spaceAfter=14)
     inspector_heading_style = ParagraphStyle('InspectorHeader', parent=styles['Heading2'], fontSize=11, leading=14, textColor=colors.HexColor('#1E3A8A'), fontName='Helvetica-Bold', spaceBefore=6, spaceAfter=6)
     cell_header_style = ParagraphStyle('HeaderStyle', parent=styles['Normal'], fontSize=8.5, leading=10, textColor=colors.white, fontName='Helvetica-Bold', alignment=1)
     cell_body_style = ParagraphStyle('BodyStyle', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#1F2937'))
 
     story = [
-        Paragraph("INFORME INSPECCIÓN", title_style),
-        Paragraph(f"<b>Período:</b> {semana_str}", subtitle_style),
+        Paragraph(titulo_doc, title_style),
+        Paragraph(f"<b>{subtitulo_doc}</b>", subtitle_style),
         Spacer(1, 6)
     ]
 
@@ -250,7 +250,7 @@ def generar_pdf_informe(df_filtrado, semana_str):
     buffer.seek(0)
     return buffer
 
-def generar_word_informe(df_filtrado, semana_str):
+def generar_word_informe(df_filtrado, titulo_doc, subtitulo_doc):
     doc = Document()
     try:
         background = parse_xml(r'<w:background {} w:color="F8FAF6"/>'.format(nsdecls('w')))
@@ -296,14 +296,14 @@ def generar_word_informe(df_filtrado, semana_str):
 
     title_p = doc.add_paragraph()
     title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    title_run = title_p.add_run("INFORME INSPECCIÓN")
-    title_run.font.size = Pt(18)
+    title_run = title_p.add_run(titulo_doc)
+    title_run.font.size = Pt(16)
     title_run.font.bold = True
     title_run.font.color.rgb = RGBColor(30, 58, 138)
     
     date_p = doc.add_paragraph()
     date_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    date_run = date_p.add_run(f"Período: {semana_str}")
+    date_run = date_p.add_run(subtitulo_doc)
     date_run.font.size = Pt(11)
     date_run.font.color.rgb = RGBColor(75, 85, 99)
     
@@ -421,7 +421,7 @@ ESTADOS_LIBERACION = [
     "En Espera de END / Pruebas"
 ]
 
-# 🟢 CORRECCIÓN: Cálculo de semana por defecto disponible de forma global
+# Cálculo de semana por defecto global
 semana_actual_num = datetime.now().isocalendar()[1]
 idx_semana_defecto = max(0, min(semana_actual_num - 1, len(LISTA_SEMANAS) - 1))
 
@@ -516,155 +516,115 @@ if menu == "📝 Registrar Actividad por Inspector":
 # =========================================================
 # MÓDULO 2: HISTORIAL E INFORMES EN WORD Y PDF
 # =========================================================
-# =========================================================
-# MÓDULO 2: HISTORIAL E INFORMES EN WORD Y PDF
-# =========================================================
 elif menu == "📊 Historial e Informes":
-    st.subheader(
-        "🔍 Consulta de Historial y Generación de Informes por Día o Semana"
-    )
-
+    st.subheader("🔍 Consulta de Historial y Generación de Informes por Día o Semana")
+    
     with st.spinner("Cargando registros desde Google Sheets..."):
         df_historial = cargar_datos_sheets()
-
+    
     if not df_historial.empty:
         st.markdown("### 🎛️ Filtros Interactivos de Consulta")
         col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns(5)
-
+        
         with col_f1:
-            filtro_inspector = st.selectbox(
-                "Filtrar por Inspector:", ["Todos"] + LISTA_INSPECTORES
-            )
+            filtro_inspector = st.selectbox("Filtrar por Inspector:", ["Todos"] + LISTA_INSPECTORES)
         with col_f2:
-            filtro_semana = st.selectbox(
-                "Filtrar por Semana:", ["Todas"] + LISTA_SEMANAS
-            )
+            filtro_semana = st.selectbox("Filtrar por Semana:", ["Todas"] + LISTA_SEMANAS)
         with col_f3:
-            filtro_planta = st.selectbox(
-                "Filtrar por Planta:", ["Todas"] + LISTA_PLANTAS
-            )
+            filtro_planta = st.selectbox("Filtrar por Planta:", ["Todas"] + LISTA_PLANTAS)
         with col_f4:
             filtro_tag = st.text_input("Filtrar por TAG:")
         with col_f5:
-            filtro_estado = st.selectbox(
-                "Filtrar por Estado:", ["Todos"] + ESTADOS_LIBERACION
-            )
+            filtro_estado = st.selectbox("Filtrar por Estado:", ["Todos"] + ESTADOS_LIBERACION)
 
         df_filtrado = df_historial.copy()
-
+        
         if "inspector" in df_filtrado.columns and filtro_inspector != "Todos":
-            df_filtrado = df_filtrado[
-                df_filtrado["inspector"] == filtro_inspector
-            ]
-
+            df_filtrado = df_filtrado[df_filtrado['inspector'] == filtro_inspector]
+            
         if "semana" in df_filtrado.columns and filtro_semana != "Todas":
-            df_filtrado = df_filtrado[df_filtrado["semana"] == filtro_semana]
+            df_filtrado = df_filtrado[df_filtrado['semana'] == filtro_semana]
 
         if "planta" in df_filtrado.columns and filtro_planta != "Todas":
-            df_filtrado = df_filtrado[df_filtrado["planta"] == filtro_planta]
+            df_filtrado = df_filtrado[df_filtrado['planta'] == filtro_planta]
 
         if "tag_equipo" in df_filtrado.columns and filtro_tag:
-            df_filtrado = df_filtrado[
-                df_filtrado["tag_equipo"]
-                .astype(str)
-                .str.contains(filtro_tag, case=False, na=False)
-            ]
+            df_filtrado = df_filtrado[df_filtrado['tag_equipo'].astype(str).str.contains(filtro_tag, case=False, na=False)]
+            
+        if "estado_liberacion" in df_filtrado.columns and filtro_estado != "Todos":
+            df_filtrado = df_filtrado[df_filtrado['estado_liberacion'] == filtro_estado]
 
-        if (
-            "estado_liberacion" in df_filtrado.columns
-            and filtro_estado != "Todos"
-        ):
-            df_filtrado = df_filtrado[
-                df_filtrado["estado_liberacion"] == filtro_estado
-            ]
-
-        st.markdown(
-            f"**Total de registros filtrados:** `{len(df_filtrado)}`"
-        )
-
+        st.markdown(f"**Total de registros filtrados:** `{len(df_filtrado)}`")
+        
         st.dataframe(df_filtrado, use_container_width=True)
 
         st.markdown("---")
         st.markdown("### 📄 Exportar Informe (Diario o Semanal)")
-
-        # 🟢 Selección de Modalidad de Informe
+        
         col_tipo, col_periodo = st.columns([1.5, 2])
-
+        
         with col_tipo:
-            tipo_reporte = st.radio(
-                "📌 Frecuencia del Reporte:",
-                ["📅 Diario", "🗓️ Semanal"],
-                horizontal=True,
-            )
-
-        # 🟢 Generación del filtro según la modalidad seleccionada
+            tipo_reporte = st.radio("📌 Frecuencia del Reporte:", ["📅 Diario", "🗓️ Semanal"], horizontal=True)
+        
         if tipo_reporte == "📅 Diario":
             with col_periodo:
-                fecha_informe_dt = st.date_input(
-                    "📅 Selecciona el Día del Informe:", datetime.now()
-                )
-                periodo_str = f"Día {fecha_informe_dt.strftime('%d/%m/%Y')}"
+                fecha_informe_dt = st.date_input("📅 Selecciona el Día del Informe:", datetime.now())
+                fecha_str_fmt = fecha_informe_dt.strftime('%d/%m/%Y')
                 fecha_str_comparar = str(fecha_informe_dt)
-
+                
+                titulo_doc = "REPORTE DIARIO DE INSPECCIÓN"
+                subtitulo_doc = f"Fecha: {fecha_str_fmt}"
+                tag_archivo = f"DIARIO_{fecha_informe_dt.strftime('%Y%m%d')}"
+            
             if "fecha" in df_historial.columns:
-                df_informe = df_historial[
-                    df_historial["fecha"].astype(str) == fecha_str_comparar
-                ]
+                df_informe = df_historial[df_historial['fecha'].astype(str) == fecha_str_comparar]
             else:
                 df_informe = pd.DataFrame()
-
-        else:  # 🗓️ Semanal
+                
+        else: # 🗓️ Semanal
             with col_periodo:
-                semana_informe = st.selectbox(
-                    "🗓️ Selecciona la Semana para el Informe:",
-                    LISTA_SEMANAS,
-                    index=idx_semana_defecto,
-                )
-                periodo_str = semana_informe
-
+                semana_informe = st.selectbox("🗓️ Selecciona la Semana para el Informe:", LISTA_SEMANAS, index=idx_semana_defecto)
+                
+                titulo_doc = "REPORTE SEMANAL DE INSPECCIÓN"
+                subtitulo_doc = f"Período: {semana_informe}"
+                tag_archivo = f"SEMANAL_{semana_informe.replace(' ', '_')}"
+            
             if "semana" in df_historial.columns:
-                df_informe = df_historial[
-                    df_historial["semana"] == semana_informe
-                ]
+                df_informe = df_historial[df_historial['semana'] == semana_informe]
             else:
                 df_informe = pd.DataFrame()
 
-        # 🟢 Generación y Descarga de Archivos
         col_exp1, col_exp2 = st.columns(2)
-
+        
         if not df_informe.empty:
             with col_exp1:
-                pdf_bytes = generar_pdf_informe(df_informe, periodo_str)
-                nombre_pdf = f"INFORME_INSPECCION_{periodo_str.replace(' ', '_').replace('/', '-')}.pdf"
+                pdf_bytes = generar_pdf_informe(df_informe, titulo_doc, subtitulo_doc)
                 st.download_button(
-                    label=f"📄 Descargar Informe PDF ({tipo_reporte.split()[1]})",
+                    label=f"📄 Descargar {titulo_doc} (PDF)",
                     data=pdf_bytes,
-                    file_name=nombre_pdf,
+                    file_name=f"INFORME_INSPECCION_{tag_archivo}.pdf",
                     mime="application/pdf",
-                    use_container_width=True,
+                    use_container_width=True
                 )
             with col_exp2:
-                word_bytes = generar_word_informe(df_informe, periodo_str)
-                nombre_word = f"INFORME_INSPECCION_{periodo_str.replace(' ', '_').replace('/', '-')}.docx"
+                word_bytes = generar_word_informe(df_informe, titulo_doc, subtitulo_doc)
                 st.download_button(
-                    label=f"📝 Descargar Informe Word ({tipo_reporte.split()[1]})",
+                    label=f"📝 Descargar {titulo_doc} (Word)",
                     data=word_bytes,
-                    file_name=nombre_word,
+                    file_name=f"INFORME_INSPECCION_{tag_archivo}.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    use_container_width=True,
+                    use_container_width=True
                 )
         else:
-            st.warning(
-                f"⚠️ No hay registros guardados en la nube para el período seleccionado: **{periodo_str}**."
-            )
+            st.warning(f"⚠️ No hay registros guardados en la nube para: **{subtitulo_doc}**.")
 
         st.markdown("---")
-        csv_data = df_filtrado.to_csv(index=False).encode("utf-8")
+        csv_data = df_filtrado.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="📥 Descargar tabla filtrada actual a CSV",
             data=csv_data,
             file_name=f"historial_actividades_filtrado_{datetime.now().strftime('%Y%m%d')}.csv",
-            mime="text/csv",
+            mime="text/csv"
         )
     else:
         st.info("ℹ️ Aún no hay registros de actividades guardados en la nube.")
