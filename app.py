@@ -82,7 +82,6 @@ def obtener_hoja_planificacion():
     try:
         return client.worksheet("Planificacion")
     except gspread.exceptions.WorksheetNotFound:
-        # Si no existe la pestaña Planificacion, la crea automáticamente con sus cabeceras
         ws = client.add_worksheet(title="Planificacion", rows=100, cols=25)
         ws.append_row([
             "planta", "tipo_informe", "circuito_equipo", "fecha_inicio", "fecha_fin", 
@@ -379,6 +378,28 @@ LISTA_INSPECTORES = [
     "Inspector 5"
 ]
 
+LISTA_INSPECTORES_DCI = [
+    "Eduardo Delgado",
+    "Felipe Ponce",
+    "José de la Cruz",
+    "Pablo Ruiz",
+    "Luis Durán"
+]
+
+ESTADOS_STATUS = [
+    "Finalizado",
+    "En curso",
+    "Pendiente"
+]
+
+TIPOS_INFORME = [
+    "IV",
+    "Ensayo Dureza",
+    "Ensayo LP",
+    "IHV",
+    "Boroscopio"
+]
+
 LISTA_PLANTAS = [
     "A0AEX", "A0ALQ", "A0BUT", "A0CCK", "A0CCR", "A0CKR", "A0HDG", "A0HDT", "A0HCK", 
     "A0ISO", "A0LAB", "A0MHC", "A0NHT", "A0SAR", "A0SHP", "A0SWS", "AACID", "AAMAR", 
@@ -584,7 +605,7 @@ elif menu == "📊 Historial e Informes":
         st.info("ℹ️ Aún no hay registros de actividades guardados en la nube.")
 
 # =========================================================
-# MÓDULO 3: REPORTE PLANIFICACIÓN (NUEVO)
+# MÓDULO 3: REPORTE PLANIFICACIÓN
 # =========================================================
 elif menu == "📈 Reporte Planificación":
     st.subheader("📅 Módulo de Registro y Control de Planificación")
@@ -595,7 +616,7 @@ elif menu == "📈 Reporte Planificación":
         
         with col1:
             p_planta = st.selectbox("🏭 Planta:", LISTA_PLANTAS)
-            p_tipo_informe = st.text_input("📋 Tipo de Informe:", placeholder="Ej: RBI, END, Estructural...")
+            p_tipo_informe = st.selectbox("📋 Tipo de Informe:", TIPOS_INFORME)
             p_circuito = st.text_input("🔧 Circuito / Equipo:", placeholder="Ej: C-1302 / Línea 12\"...")
             p_f_inicio = st.date_input("📅 Fecha Inicio Inspección:", datetime.now())
             p_f_fin = st.date_input("📅 Fecha FIN Inspección:", datetime.now())
@@ -603,12 +624,12 @@ elif menu == "📈 Reporte Planificación":
             p_programa = st.text_input("📌 PROGRAMA:", placeholder="Ej: Programa 2026...")
 
         with col2:
-            p_insp_dci = st.selectbox("👷‍♂️ Inspector DCI:", ["Todos"] + LISTA_INSPECTORES)
+            p_insp_dci = st.selectbox("👷‍♂️ Inspector DCI:", LISTA_INSPECTORES_DCI)
             p_insp_ingemars = st.selectbox("👷‍♂️ Inspector Ingemars:", ["Todos"] + LISTA_INSPECTORES)
             p_dias_enap = st.number_input("⏱️ Días entregados por ing. ENAP:", min_value=0, value=0)
             p_otep = st.text_input("📄 N° OTEP:", placeholder="Ej: OTEP-9988...")
             p_informe_iv = st.text_input("📑 N° INFORME IV:", placeholder="Ej: IV-2026-01...")
-            p_status = st.selectbox("📌 Status:", ["En Proceso", "Completado", "Atrasado", "Pendiente de Aprobación"])
+            p_status = st.selectbox("📌 Status:", ESTADOS_STATUS)
             p_f_entrega_ope = st.date_input("📅 Fecha entrega (Ing. Ope.):", datetime.now())
 
         with col3:
@@ -628,7 +649,7 @@ elif menu == "📈 Reporte Planificación":
                 ws_plan = obtener_hoja_planificacion()
                 nueva_fila_plan = [
                     p_planta,
-                    p_tipo_informe.strip(),
+                    p_tipo_informe,
                     p_circuito.strip(),
                     str(p_f_inicio),
                     str(p_f_fin),
