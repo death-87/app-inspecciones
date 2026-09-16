@@ -48,13 +48,11 @@ def cargar_datos_sheets():
         filas = sheet.get_all_values()
         
         if len(filas) <= 1:
-            # Solo está la cabecera o está vacía
             return pd.DataFrame(columns=[
-                "fecha", "inspector", "tag_equipo", 
-                "actividad_realizada", "observaciones", "estado_liberacion"
+                "fecha", "semana", "planta", "inspector", "tag_equipo", 
+                "actividad_realizada", "avance", "observaciones", "estado_liberacion"
             ])
             
-        # La primera fila son los encabezados
         encabezados = [c.strip().lower() for c in filas[0]]
         datos = filas[1:]
         
@@ -63,12 +61,12 @@ def cargar_datos_sheets():
     except Exception as e:
         st.error(f"Error al leer la hoja de Google Sheets: {e}")
         return pd.DataFrame(columns=[
-            "fecha", "inspector", "tag_equipo", 
-            "actividad_realizada", "observaciones", "estado_liberacion"
+            "fecha", "semana", "planta", "inspector", "tag_equipo", 
+            "actividad_realizada", "avance", "observaciones", "estado_liberacion"
         ])
 
 # =========================================================
-# LISTA DE INSPECTORES Y CONFIGURACIÓN DE ESTADOS
+# LISTAS Y CONFIGURACIONES
 # =========================================================
 LISTA_INSPECTORES = [
     "Juan Navarrete",
@@ -77,6 +75,9 @@ LISTA_INSPECTORES = [
     "Inspector 4",
     "Inspector 5"
 ]
+
+# Lista de Semanas 1 a 52
+LISTA_SEMANAS = [f"Semana {i}" for i in range(1, 53)]
 
 ESTADOS_LIBERACION = [
     "Liberado / Conforme (Aprobado)",
@@ -125,20 +126,42 @@ if menu == "📝 Registrar Actividad por Inspector":
     with st.form("form_actividades_inspector", clear_on_submit=True):
         col1, col2 = st.columns(2)
         
+        # Calcular semana actual como valor por defecto
+        semana_actual_num = datetime.now().isocalendar()[1]
+        idx_semana_defecto = min(semana_actual_num - 1, 51)
+        
         with col1:
             inspector_seleccionado = st.selectbox(
                 "👷‍♂️ Seleccionar Inspector asignado:",
                 LISTA_INSPECTORES
             )
             fecha_actividad = st.date_input("📅 Fecha de Inspección:", datetime.now())
-            tag_equipo = st.text_input("🏷️ TAG del Equipo / Línea Piping:", placeholder="Ej: C-1302 / E-2101 / PIP-001")
+            semana_seleccionada = st.selectbox(
+                "🗓️ Semana Operativa:", 
+                LISTA_SEMANAS, 
+                index=idx_semana_defecto
+            )
+            planta_ingresada = st.text_input("🏭 Planta / Unidad:", placeholder="Ej: Refinería Concón / Planta Llay-Llay")
 
         with col2:
-            estado_liberacion = st.selectbox("📌 Estado de la Inspección:", ESTADOS_LIBERACION)
-            actividad_realizada = st.text_area(
-                "🛠️ Actividades Realizadas por el Inspector:",
-                placeholder="Ej: Inspección visual de junta, verificación de Alineación/Torque..."
+            tag_equipo = st.text_input("🏷️ TAG del Equipo / Línea Piping:", placeholder="Ej: C-1302 / E-2101 / PIP-001")
+            
+            # Deslizador para Porcentaje de Avance
+            porcentaje_avance = st.slider(
+                "📊 Porcentaje de Avance de la Actividad:",
+                min_value=0,
+                max_value=100,
+                value=0,
+                step=5,
+                format="%d%%"
             )
+            
+            estado_liberacion = st.selectbox("📌 Estado de la Inspección:", ESTADOS_LIBERACION)
+
+        actividad_realizada = st.text_area(
+            "🛠️ Actividades Realizadas por el Inspector:",
+            placeholder="Ej: Inspección visual de junta, verificación de Alineación/Torque..."
+        )
 
         observaciones = st.text_area(
             "💬 Observaciones Adicionales / Recomendaciones:",
@@ -152,26 +175,28 @@ if menu == "📝 Registrar Actividad por Inspector":
                 try:
                     sheet = conectar_google_sheets()
                     
-                    # Verificamos si la hoja está completamente vacía para agregar cabecera primero
                     todas_las_filas = sheet.get_all_values()
                     if len(todas_las_filas) == 0:
                         sheet.append_row([
-                            "fecha", "inspector", "tag_equipo", 
-                            "actividad_realizada", "observaciones", "estado_liberacion"
+                            "fecha", "semana", "planta", "inspector", "tag_equipo", 
+                            "actividad_realizada", "avance", "observaciones", "estado_liberacion"
                         ])
                     
                     nueva_fila = [
                         str(fecha_actividad),
+                        semana_seleccionada,
+                        planta_ingresada.strip(),
                         inspector_seleccionado,
                         tag_equipo.strip(),
                         actividad_realizada.strip(),
+                        f"{porcentaje_avance}%",
                         observaciones.strip(),
                         estado_liberacion
                     ]
                     
                     sheet.append_row(nueva_fila)
                     
-                    st.success(f"✅ ¡Actividad de **{inspector_seleccionado}** guardada con éxito en Google Sheets!")
+                    st.success(f"✅ ¡Actividad de **{inspector_seleccionado}** (TAG: {tag_equipo} - Avance: {porcentaje_avance}%) guardada con éxito!")
                 except Exception as ex:
                     st.error(f"❌ Ocurrió un error al guardar en la nube: {ex}")
             else:
@@ -187,27 +212,25 @@ elif menu == "📊 Historial en la Nube":
         df_historial = cargar_datos_sheets()
     
     if not df_historial.empty:
-        col_filtro1, col_filtro2, col_filtro3 = st.columns(3)
+        col_f1, col_f2, col_f3, col_f4 = st.columns(4)
         
-        with col_filtro1:
-            filtro_inspector = st.selectbox(
-                "Filtrar por Inspector:",
-                ["Todos"] + LISTA_INSPECTORES
-            )
-        with col_filtro2:
-            filtro_tag = st.text_input("Filtrar por TAG de Equipo:")
-            
-        with col_filtro3:
-            filtro_estado = st.selectbox(
-                "Filtrar por Estado:",
-                ["Todos"] + ESTADOS_LIBERACION
-            )
+        with col_f1:
+            filtro_inspector = st.selectbox("Filtrar por Inspector:", ["Todos"] + LISTA_INSPECTORES)
+        with col_f2:
+            filtro_semana = st.selectbox("Filtrar por Semana:", ["Todas"] + LISTA_SEMANAS)
+        with col_f3:
+            filtro_tag = st.text_input("Filtrar por TAG:")
+        with col_f4:
+            filtro_estado = st.selectbox("Filtrar por Estado:", ["Todos"] + ESTADOS_LIBERACION)
 
         df_filtrado = df_historial.copy()
         
         if "inspector" in df_filtrado.columns and filtro_inspector != "Todos":
             df_filtrado = df_filtrado[df_filtrado['inspector'] == filtro_inspector]
             
+        if "semana" in df_filtrado.columns and filtro_semana != "Todas":
+            df_filtrado = df_filtrado[df_filtrado['semana'] == filtro_semana]
+
         if "tag_equipo" in df_filtrado.columns and filtro_tag:
             df_filtrado = df_filtrado[df_filtrado['tag_equipo'].astype(str).str.contains(filtro_tag, case=False, na=False)]
             
