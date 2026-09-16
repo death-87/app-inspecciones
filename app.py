@@ -76,6 +76,18 @@ LISTA_INSPECTORES = [
     "Inspector 5"
 ]
 
+# Lista de Plantas de Unidades de Proceso
+LISTA_PLANTAS = [
+    "A0AEX", "A0ALQ", "A0BUT", "A0CCK", "A0CCR", "A0CKR", "A0HDG", "A0HDT", "A0HCK", 
+    "A0ISO", "A0LAB", "A0MHC", "A0NHT", "A0SAR", "A0SHP", "A0SWS", "AACID", "AAMAR", 
+    "AAMIN", "AAMPL", "AANTO", "AAREF", "AASER", "AALQU", "ADESO", "ADEV1", "ADEV2", 
+    "ADIPE", "AE501", "ALNHT", "ALPG1", "ALPG2", "ALPG3", "AMACO", "AMDEA", "AMRX1", 
+    "AMRX2", "AMRX3", "AMRX4", "AMVPR", "AOLEO", "APBMP", "APBTQ", "APCAR", "APFEN", 
+    "APRCO", "ARPLU", "AREFO", "AREMO", "ARILE", "ASAIC", "ASOLV", "ASPLI", "ASRCO", 
+    "ASUEL", "ASVAQ", "ASVAP", "ASWS2", "ASYBR", "ASEFL", "ASEFQ", "ATOP1", "ATOP2", 
+    "ATRAG", "AURA1", "AURA2", "AURA3", "AVAC1", "AVAC2", "ACOKE"
+]
+
 # Lista de Semanas 1 a 52
 LISTA_SEMANAS = [f"Semana {i}" for i in range(1, 53)]
 
@@ -141,7 +153,10 @@ if menu == "📝 Registrar Actividad por Inspector":
                 LISTA_SEMANAS, 
                 index=idx_semana_defecto
             )
-            planta_ingresada = st.text_input("🏭 Planta / Unidad:", placeholder="Ej: Refinería Concón / Planta Llay-Llay")
+            planta_seleccionada = st.selectbox(
+                "🏭 Planta / Unidad:", 
+                LISTA_PLANTAS
+            )
 
         with col2:
             tag_equipo = st.text_input("🏷️ TAG del Equipo / Línea Piping:", placeholder="Ej: C-1302 / E-2101 / PIP-001")
@@ -185,7 +200,7 @@ if menu == "📝 Registrar Actividad por Inspector":
                     nueva_fila = [
                         str(fecha_actividad),
                         semana_seleccionada,
-                        planta_ingresada.strip(),
+                        planta_seleccionada,
                         inspector_seleccionado,
                         tag_equipo.strip(),
                         actividad_realizada.strip(),
@@ -196,7 +211,7 @@ if menu == "📝 Registrar Actividad por Inspector":
                     
                     sheet.append_row(nueva_fila)
                     
-                    st.success(f"✅ ¡Actividad de **{inspector_seleccionado}** (TAG: {tag_equipo} - Avance: {porcentaje_avance}%) guardada con éxito!")
+                    st.success(f"✅ ¡Actividad de **{inspector_seleccionado}** (Planta: {planta_seleccionada} | TAG: {tag_equipo}) guardada con éxito!")
                 except Exception as ex:
                     st.error(f"❌ Ocurrió un error al guardar en la nube: {ex}")
             else:
@@ -212,15 +227,17 @@ elif menu == "📊 Historial en la Nube":
         df_historial = cargar_datos_sheets()
     
     if not df_historial.empty:
-        col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+        col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns(5)
         
         with col_f1:
             filtro_inspector = st.selectbox("Filtrar por Inspector:", ["Todos"] + LISTA_INSPECTORES)
         with col_f2:
             filtro_semana = st.selectbox("Filtrar por Semana:", ["Todas"] + LISTA_SEMANAS)
         with col_f3:
-            filtro_tag = st.text_input("Filtrar por TAG:")
+            filtro_planta = st.selectbox("Filtrar por Planta:", ["Todas"] + LISTA_PLANTAS)
         with col_f4:
+            filtro_tag = st.text_input("Filtrar por TAG:")
+        with col_f5:
             filtro_estado = st.selectbox("Filtrar por Estado:", ["Todos"] + ESTADOS_LIBERACION)
 
         df_filtrado = df_historial.copy()
@@ -230,6 +247,9 @@ elif menu == "📊 Historial en la Nube":
             
         if "semana" in df_filtrado.columns and filtro_semana != "Todas":
             df_filtrado = df_filtrado[df_filtrado['semana'] == filtro_semana]
+
+        if "planta" in df_filtrado.columns and filtro_planta != "Todas":
+            df_filtrado = df_filtrado[df_filtrado['planta'] == filtro_planta]
 
         if "tag_equipo" in df_filtrado.columns and filtro_tag:
             df_filtrado = df_filtrado[df_filtrado['tag_equipo'].astype(str).str.contains(filtro_tag, case=False, na=False)]
