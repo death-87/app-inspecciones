@@ -20,9 +20,8 @@ URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/m
 SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 
 # =========================================================
-# CONEXIÓN CON GOOGLE SHEETS (USANDO GSPREAD NATIVO)
+# CONEXIÓN DIRECTA CON GOOGLE SHEETS VIA GSPREAD
 # =========================================================
-@st.cache_resource
 def conectar_google_sheets():
     """Autentica y devuelve la hoja de trabajo activa."""
     scopes = [
@@ -30,15 +29,11 @@ def conectar_google_sheets():
         "https://www.googleapis.com/auth/drive"
     ]
     
-    # Extraemos el diccionario de Secrets
     creds_dict = dict(st.secrets["connections"]["gsheets"])
     
-    # Sanitizamos la llave privada en memoria para limpiar saltos de línea y el padding PEM
     if "private_key" in creds_dict:
         pk = creds_dict["private_key"]
         pk = pk.replace("\\n", "\n").strip()
-        
-        # Reconstruimos la clave en líneas limpias
         lines = [line.strip() for line in pk.split("\n") if line.strip()]
         creds_dict["private_key"] = "\n".join(lines) + "\n"
 
@@ -47,11 +42,24 @@ def conectar_google_sheets():
     return client.open_by_key(SPREADSHEET_ID).sheet1
 
 def cargar_datos_sheets():
-    """Lee todas las filas almacenadas en la Hoja."""
+    """Lee todas las filas almacenadas en la Hoja de forma directa."""
     try:
         sheet = conectar_google_sheets()
-        data = sheet.get_all_records()
-        return pd.DataFrame(data)
+        filas = sheet.get_all_values()
+        
+        if len(filas) <= 1:
+            # Solo está la cabecera o está vacía
+            return pd.DataFrame(columns=[
+                "fecha", "inspector", "tag_equipo", 
+                "actividad_realizada", "observaciones", "estado_liberacion"
+            ])
+            
+        # La primera fila son los encabezados
+        encabezados = [c.strip().lower() for c in filas[0]]
+        datos = filas[1:]
+        
+        df = pd.DataFrame(datos, columns=encabezados)
+        return df
     except Exception as e:
         st.error(f"Error al leer la hoja de Google Sheets: {e}")
         return pd.DataFrame(columns=[
@@ -144,6 +152,14 @@ if menu == "📝 Registrar Actividad por Inspector":
                 try:
                     sheet = conectar_google_sheets()
                     
+                    # Verificamos si la hoja está completamente vacía para agregar cabecera primero
+                    todas_las_filas = sheet.get_all_values()
+                    if len(todas_las_filas) == 0:
+                        sheet.append_row([
+                            "fecha", "inspector", "tag_equipo", 
+                            "actividad_realizada", "observaciones", "estado_liberacion"
+                        ])
+                    
                     nueva_fila = [
                         str(fecha_actividad),
                         inspector_seleccionado,
@@ -154,9 +170,6 @@ if menu == "📝 Registrar Actividad por Inspector":
                     ]
                     
                     sheet.append_row(nueva_fila)
-                    
-                    # Limpiamos el caché para refrescar los datos inmediatamente
-                    st.cache_resource.clear()
                     
                     st.success(f"✅ ¡Actividad de **{inspector_seleccionado}** guardada con éxito en Google Sheets!")
                 except Exception as ex:
@@ -173,7 +186,7 @@ elif menu == "📊 Historial en la Nube":
     with st.spinner("Cargando registros desde Google Sheets..."):
         df_historial = cargar_datos_sheets()
     
-    if not df_historial.empty and "inspector" in df_historial.columns:
+    if not df_historial.empty:
         col_filtro1, col_filtro2, col_filtro3 = st.columns(3)
         
         with col_filtro1:
@@ -192,13 +205,13 @@ elif menu == "📊 Historial en la Nube":
 
         df_filtrado = df_historial.copy()
         
-        if filtro_inspector != "Todos":
+        if "inspector" in df_filtrado.columns and filtro_inspector != "Todos":
             df_filtrado = df_filtrado[df_filtrado['inspector'] == filtro_inspector]
             
-        if filtro_tag:
+        if "tag_equipo" in df_filtrado.columns and filtro_tag:
             df_filtrado = df_filtrado[df_filtrado['tag_equipo'].astype(str).str.contains(filtro_tag, case=False, na=False)]
             
-        if filtro_estado != "Todos":
+        if "estado_liberacion" in df_filtrado.columns and filtro_estado != "Todos":
             df_filtrado = df_filtrado[df_filtrado['estado_liberacion'] == filtro_estado]
 
         st.markdown(f"**Total de registros encontrados:** `{len(df_filtrado)}`")
