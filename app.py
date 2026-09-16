@@ -442,8 +442,8 @@ with col_logo:
         st.write("📂 [Logo]")
 
 with col_titulo:
-    st.title("Control de Actividades por Inspector")
-    st.markdown("##### *Sistema de Gestión QA/QC Sincronizado en la Nube*")
+    st.title("Sistema de Gestión de Activos Físicos - QA/QC")
+    st.markdown("##### *Control Operativo de Inspectores e Histórico de Informes*")
 
 st.markdown("---")
 
