@@ -20,21 +20,28 @@ URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/m
 SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 
 # =========================================================
-# CONEXIÓN DIRECTA CON GOOGLE SHEETS VIA GSPREAD
+# CONEXIÓN CON GOOGLE SHEETS (USANDO GSPREAD NATIVO)
 # =========================================================
 @st.cache_resource
 def conectar_google_sheets():
-    """Autentica y devuelve el cliente de Google Sheets."""
+    """Autentica y devuelve la hoja de trabajo activa."""
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
     
-    # Preparamos las credenciales desde Secrets sanitizando la private_key
+    # Extraemos el diccionario de Secrets
     creds_dict = dict(st.secrets["connections"]["gsheets"])
+    
+    # Sanitizamos la llave privada en memoria para limpiar saltos de línea y el padding PEM
     if "private_key" in creds_dict:
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        pk = creds_dict["private_key"]
+        pk = pk.replace("\\n", "\n").strip()
         
+        # Reconstruimos la clave en líneas limpias
+        lines = [line.strip() for line in pk.split("\n") if line.strip()]
+        creds_dict["private_key"] = "\n".join(lines) + "\n"
+
     credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     client = gspread.authorize(credentials)
     return client.open_by_key(SPREADSHEET_ID).sheet1
@@ -146,8 +153,10 @@ if menu == "📝 Registrar Actividad por Inspector":
                         estado_liberacion
                     ]
                     
-                    # Agrega la fila directamente al final de la hoja sin reescribir todo
                     sheet.append_row(nueva_fila)
+                    
+                    # Limpiamos el caché para refrescar los datos inmediatamente
+                    st.cache_resource.clear()
                     
                     st.success(f"✅ ¡Actividad de **{inspector_seleccionado}** guardada con éxito en Google Sheets!")
                 except Exception as ex:
