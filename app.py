@@ -8,7 +8,7 @@ from datetime import datetime
 
 # Librerías para generación de PDF
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
@@ -17,6 +17,8 @@ from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.oxml import OxmlElement, parse_xml
+from docx.oxml.ns import nsdecls, qn
 
 # =========================================================
 # CONFIGURACIÓN DE LA PÁGINA
@@ -76,7 +78,7 @@ def cargar_datos_sheets():
         st.error(f"Error al leer la hoja de Google Sheets: {e}")
         return pd.DataFrame(columns=[
             "fecha", "semana", "planta", "inspector", "tag_equipo", 
-            "actividad_realizada", "observaciones", "estado_liberacion"
+            "actividad_realizada", "avance", "observaciones", "estado_liberacion"
         ])
 
 # =========================================================
@@ -90,19 +92,19 @@ def generar_pdf_informe(df_fecha, fecha_str):
         pagesize=letter,
         rightMargin=30,
         leftMargin=30,
-        topMargin=30,
-        bottomMargin=50
+        topMargin=20,
+        bottomMargin=40
     )
     
     styles = getSampleStyleSheet()
     
     title_style = ParagraphStyle(
         'DocTitle', parent=styles['Heading1'], fontSize=20, leading=24,
-        textColor=colors.HexColor('#1E3A8A'), alignment=1, spaceAfter=10
+        textColor=colors.HexColor('#1E3A8A'), alignment=1, spaceAfter=8
     )
     subtitle_style = ParagraphStyle(
-        'DocSubTitle', parent=styles['Normal'], fontSize=12, leading=15,
-        textColor=colors.HexColor('#4B5563'), alignment=1, spaceAfter=20
+        'DocSubTitle', parent=styles['Normal'], fontSize=11, leading=14,
+        textColor=colors.HexColor('#4B5563'), alignment=1, spaceAfter=18
     )
     cell_header_style = ParagraphStyle(
         'HeaderStyle', parent=styles['Normal'], fontSize=9, leading=11,
@@ -112,13 +114,30 @@ def generar_pdf_informe(df_fecha, fecha_str):
         'BodyStyle', parent=styles['Normal'], fontSize=8, leading=10,
         textColor=colors.HexColor('#1F2937')
     )
+    footer_style = ParagraphStyle(
+        'FooterStyle', parent=styles['Normal'], fontSize=7, leading=9,
+        textColor=colors.HexColor('#9CA3AF'), alignment=1, spaceBefore=4
+    )
 
-    story = [
-        Paragraph("INFORME INSPECCIÓN", title_style),
-        Paragraph(f"<b>Fecha del Reporte:</b> {fecha_str}", subtitle_style),
-        Spacer(1, 10)
-    ]
+    story = []
 
+    # 1. FRANJA SUPERIOR VERDE DE CORTE ELEGANTE
+    banner_data = [[""]]
+    banner_table = Table(banner_data, colWidths=[552], rowHeights=[8])
+    banner_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#059669')),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(banner_table)
+    story.append(Spacer(1, 15))
+
+    # 2. TÍTULO Y FECHA
+    story.append(Paragraph("INFORME INSPECCIÓN", title_style))
+    story.append(Paragraph(f"<b>Fecha del Reporte:</b> {fecha_str}", subtitle_style))
+    story.append(Spacer(1, 10))
+
+    # 3. TABLA DE REGISTROS
     if not df_fecha.empty:
         table_data = [[
             Paragraph("Inspector", cell_header_style),
@@ -144,7 +163,7 @@ def generar_pdf_informe(df_fecha, fecha_str):
                 Paragraph(estado, cell_body_style)
             ])
             
-        t = Table(table_data, colWidths=[100, 110, 200, 50, 90])
+        t = Table(table_data, colWidths=[100, 110, 200, 50, 92])
         t.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
             ('ALIGN', (0,0), (-1,-1), 'LEFT'),
@@ -156,9 +175,9 @@ def generar_pdf_informe(df_fecha, fecha_str):
         ]))
         story.append(t)
 
-    story.append(Spacer(1, 30))
+    story.append(Spacer(1, 35))
 
-    # Logo en la parte inferior
+    # 4. LOGO JUSTO SOBRE EL PIE DE PÁGINA
     try:
         response = requests.get(URL_LOGO_GITHUB, timeout=5)
         if response.status_code == 200:
@@ -166,8 +185,12 @@ def generar_pdf_informe(df_fecha, fecha_str):
             logo_img = RLImage(img_data, width=120, height=50)
             logo_img.hAlign = 'CENTER'
             story.append(logo_img)
+            story.append(Spacer(1, 6))
     except Exception:
         pass
+
+    # 5. TEXTO INSTITUCIONAL EN PIE DE PÁGINA
+    story.append(Paragraph("SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.<br/>CONTRATO N° AC 31104857", footer_style))
 
     doc.build(story)
     buffer.seek(0)
@@ -180,30 +203,45 @@ def generar_word_informe(df_fecha, fecha_str):
     """Genera un archivo Word (.docx) estructurado para la fecha seleccionada."""
     doc = Document()
     
-    # 1. TÍTULO
+    # 1. FRANJA SUPERIOR VERDE DE CORTE ELEGANTE
+    banner_table = doc.add_table(rows=1, cols=1)
+    banner_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    cell = banner_table.rows[0].cells[0]
+    cell.width = Inches(6.5)
+    
+    # Aplicar color verde en la celda (#059669)
+    shading_elm = parse_xml(r'<w:shd {} w:fill="059669"/>'.format(nsdecls('w')))
+    cell._tc.get_or_add_tcPr().append(shading_elm)
+    
+    p_banner = cell.paragraphs[0]
+    p_banner.paragraph_format.space_before = Pt(2)
+    p_banner.paragraph_format.space_after = Pt(2)
+
+    doc.add_paragraph() # Espaciador
+
+    # 2. TÍTULO
     title_p = doc.add_paragraph()
     title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     title_run = title_p.add_run("INFORME INSPECCIÓN")
     title_run.font.size = Pt(20)
     title_run.font.bold = True
-    title_run.font.color.rgb = RGBColor(30, 58, 138) # Azul marino
+    title_run.font.color.rgb = RGBColor(30, 58, 138)
     
-    # 2. FECHA
+    # 3. FECHA
     date_p = doc.add_paragraph()
     date_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     date_run = date_p.add_run(f"Fecha del Reporte: {fecha_str}")
-    date_run.font.size = Pt(12)
+    date_run.font.size = Pt(11)
     date_run.font.color.rgb = RGBColor(75, 85, 99)
     
-    doc.add_paragraph() # Espaciador
+    doc.add_paragraph()
 
-    # 3. TABLA DE REGISTROS
+    # 4. TABLA DE REGISTROS
     if not df_fecha.empty:
         table = doc.add_table(rows=1, cols=5)
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
         table.style = 'Table Grid'
         
-        # Encabezados
         hdr_cells = table.rows[0].cells
         headers = ["Inspector", "Planta / TAG", "Actividad Realizada", "Avance", "Estado"]
         for i, header_text in enumerate(headers):
@@ -212,15 +250,9 @@ def generar_word_informe(df_fecha, fecha_str):
             p.runs[0].font.bold = True
             p.runs[0].font.size = Pt(9)
             p.runs[0].font.color.rgb = RGBColor(255, 255, 255)
-            # Fondo azul para encabezado
-            shading = hdr_cells[i]._tc.get_or_add_tcPr()
-            shd = shading.makeelement('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}shd',
-                                     {'{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val': 'clear',
-                                      '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}color': 'auto',
-                                      '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}fill': '1E3A8A'})
-            shading.append(shd)
+            shd = parse_xml(r'<w:shd {} w:fill="1E3A8A"/>'.format(nsdecls('w')))
+            hdr_cells[i]._tc.get_or_add_tcPr().append(shd)
 
-        # Filas de datos
         for _, row in df_fecha.iterrows():
             row_cells = table.add_row().cells
             row_cells[0].text = str(row.get("inspector", "-"))
@@ -234,19 +266,29 @@ def generar_word_informe(df_fecha, fecha_str):
                     for r in p.runs:
                         r.font.size = Pt(8.5)
 
-    doc.add_paragraph() # Espaciador
+    doc.add_paragraph()
 
-    # 4. LOGO AL PIE
+    # 5. LOGO JUSTO SOBRE EL PIE DE PÁGINA
     try:
         response = requests.get(URL_LOGO_GITHUB, timeout=5)
         if response.status_code == 200:
             img_data = io.BytesIO(response.content)
             logo_p = doc.add_paragraph()
             logo_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            logo_p.paragraph_format.space_before = Pt(20)
+            logo_p.paragraph_format.space_after = Pt(2)
             logo_run = logo_p.add_run()
             logo_run.add_picture(img_data, width=Inches(1.8))
     except Exception:
         pass
+
+    # 6. TEXTO INSTITUCIONAL EN PIE DE PÁGINA
+    footer_p = doc.add_paragraph()
+    footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    footer_p.paragraph_format.space_before = Pt(2)
+    footer_run = footer_p.add_run("SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.\nCONTRATO N° AC 31104857")
+    footer_run.font.size = Pt(7)
+    footer_run.font.color.rgb = RGBColor(156, 163, 175)
 
     buffer = io.BytesIO()
     doc.save(buffer)
@@ -395,7 +437,7 @@ elif menu == "📊 Historial e Informes":
     
     if not df_informe.empty:
         with col_pdf2:
-            st.write("&nbsp;") # Espaciador
+            st.write("&nbsp;")
             pdf_bytes = generar_pdf_informe(df_informe, fecha_informe_str)
             st.download_button(
                 label="📄 Descargar Informe (PDF)",
@@ -405,7 +447,7 @@ elif menu == "📊 Historial e Informes":
                 use_container_width=True
             )
         with col_pdf3:
-            st.write("&nbsp;") # Espaciador
+            st.write("&nbsp;")
             word_bytes = generar_word_informe(df_informe, fecha_informe_str)
             st.download_button(
                 label="📝 Descargar Informe (Word)",
