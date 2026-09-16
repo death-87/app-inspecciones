@@ -12,7 +12,6 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import cm
-from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 
 # Librerías para generación de Word
@@ -99,56 +98,43 @@ def cargar_datos_sheets():
         ])
 
 # =========================================================
-# CLASE CANVAS PARA PLANTILLA CORPORATIVA EN PDF
+# DISEÑO DE PLANTILLA (FONDO, CABECERA Y PIE PARA PDF)
 # =========================================================
-class PlantillaCorporativaCanvas(canvas.Canvas):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._saved_page_states = []
+def dibujar_plantilla(canvas, doc):
+    """Dibuja el fondo y los marcos en la capa inferior del PDF."""
+    canvas.saveState()
+    
+    # 0. Fondo de toda la hoja #f8faf6
+    canvas.setFillColor(colors.HexColor("#f8faf6"))
+    canvas.rect(0, 0, letter[0], letter[1], fill=1, stroke=0)
 
-    def showPage(self):
-        self._saved_page_states.append(dict(self.__dict__))
-        self._startPage()
+    # 1. Franja superior verde #619b40 (2 cm)
+    canvas.setFillColor(colors.HexColor("#619b40"))
+    canvas.rect(0, letter[1] - (2 * cm), letter[0], 2 * cm, fill=1, stroke=0)
 
-    def save(self):
-        num_pages = len(self._saved_page_states)
-        for state in self._saved_page_states:
-            self.__dict__.update(state)
-            self.dibujar_elementos_corporativos(num_pages)
-            super().showPage()
-        super().save()
+    # 2. Logo en la parte SUPERIOR IZQUIERDA
+    logo_bytes = obtener_bytes_logo()
+    if logo_bytes:
+        try:
+            img_stream = io.BytesIO(logo_bytes)
+            img = ImageReader(img_stream)
+            canvas.drawImage(img, 30, letter[1] - (2 * cm) - 55, width=120, height=45, preserveAspectRatio=True, mask='auto')
+        except Exception:
+            pass
 
-    def dibujar_elementos_corporativos(self, page_count):
-        # 0. Fondo de toda la hoja color #f8faf6
-        self.setFillColor(colors.HexColor("#f8faf6"))
-        self.rect(0, 0, 612, 792, fill=1, stroke=0)
-
-        # 1. Franja superior verde #619b40 (2 cm exactos)
-        self.setFillColor(colors.HexColor("#619b40"))
-        self.rect(0, 792 - (2 * cm), 612, 2 * cm, fill=1, stroke=0)
-
-        # 2. Logo en la parte SUPERIOR IZQUIERDA
-        logo_bytes = obtener_bytes_logo()
-        if logo_bytes:
-            try:
-                img_stream = io.BytesIO(logo_bytes)
-                img = ImageReader(img_stream)
-                # Posicionado justo debajo de la franja verde, alineado a la izquierda (X=30)
-                self.drawImage(img, 30, 792 - (2 * cm) - 55, width=120, height=45, preserveAspectRatio=True, mask='auto')
-            except Exception as e:
-                pass
-
-        # 3. Texto Institucional Pie de Página
-        self.setFont("Helvetica", 7)
-        self.setFillColor(colors.HexColor("#6B7280"))
-        self.drawCentredString(306, 26, "SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.")
-        self.drawCentredString(306, 16, "CONTRATO N° AC 31104857")
-        
-        # 4. Numeración de página
-        self.drawRightString(582, 16, f"Pág. {self._pageNumber} de {page_count}")
+    # 3. Texto Institucional Pie de Página
+    canvas.setFont("Helvetica", 7)
+    canvas.setFillColor(colors.HexColor("#6B7280"))
+    canvas.drawCentredString(letter[0] / 2.0, 26, "SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.")
+    canvas.drawCentredString(letter[0] / 2.0, 16, "CONTRATO N° AC 31104857")
+    
+    # 4. Numeración de página
+    canvas.drawRightString(letter[0] - 30, 16, f"Pág. {canvas.getPageNumber()}")
+    
+    canvas.restoreState()
 
 # =========================================================
-# FUNCIÓN PARA GENERAR PDF CON TABLAS POR INSPECTOR Y FRANJA NARANJA
+# FUNCIÓN PARA GENERAR PDF CON TABLAS POR INSPECTOR
 # =========================================================
 def generar_pdf_informe(df_fecha, fecha_str):
     buffer = io.BytesIO()
@@ -157,7 +143,7 @@ def generar_pdf_informe(df_fecha, fecha_str):
         pagesize=letter,
         rightMargin=30,
         leftMargin=30,
-        topMargin=4.5 * cm, # Ampliado para dejar espacio al logo superior
+        topMargin=4.5 * cm, # Espacio para la franja y el logo
         bottomMargin=2.2 * cm
     )
     
@@ -195,7 +181,6 @@ def generar_pdf_informe(df_fecha, fecha_str):
         total_grupos = len(inspectores_grupos)
         
         for idx, (inspector_nom, group_df) in enumerate(inspectores_grupos):
-            # Encabezado del Inspector
             story.append(Paragraph(f"👷‍♂️ Inspector: <b>{inspector_nom}</b>", inspector_heading_style))
             
             table_data = [[
@@ -228,7 +213,6 @@ def generar_pdf_informe(df_fecha, fecha_str):
                 ('ALIGN', (0,0), (-1,-1), 'LEFT'),
                 ('VALIGN', (0,0), (-1,-1), 'TOP'),
                 ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#D1D5DB')),
-                # Fondo intercalado entre blanco y gris claro corporativo
                 ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F3F4F6')]),
                 ('BOTTOMPADDING', (0,0), (-1,-1), 5),
                 ('TOPPADDING', (0,0), (-1,-1), 5),
@@ -247,12 +231,13 @@ def generar_pdf_informe(df_fecha, fecha_str):
                 story.append(divider_table)
                 story.append(Spacer(1, 10))
 
-    doc.build(story, canvasmaker=PlantillaCorporativaCanvas)
+    # onFirstPage y onLaterPages garantizan que el fondo se dibuje DEBAJO del texto
+    doc.build(story, onFirstPage=dibujar_plantilla, onLaterPages=dibujar_plantilla)
     buffer.seek(0)
     return buffer
 
 # =========================================================
-# FUNCIÓN PARA GENERAR WORD CON TABLAS POR INSPECTOR Y FRANJA NARANJA
+# FUNCIÓN PARA GENERAR WORD CON TABLAS POR INSPECTOR
 # =========================================================
 def generar_word_informe(df_fecha, fecha_str):
     doc = Document()
@@ -354,7 +339,6 @@ def generar_word_informe(df_fecha, fecha_str):
                 row_cells[3].text = str(row.get("estado_liberacion", "-"))
                 row_cells[4].text = str(row.get("observaciones", "-")) if row.get("observaciones") else "-"
                 
-                # Fondo condicional opcional para Word si es necesario
                 for cell in row_cells:
                     for p in cell.paragraphs:
                         for r in p.runs:
@@ -362,7 +346,6 @@ def generar_word_informe(df_fecha, fecha_str):
 
             doc.add_paragraph()
 
-            # Franja Naranja entre distintos inspectores
             if idx < total_grupos - 1:
                 div_table = doc.add_table(rows=1, cols=1)
                 div_table.alignment = WD_TABLE_ALIGNMENT.CENTER
