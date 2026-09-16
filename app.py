@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 # 🔗 REEMPLAZA ESTA URL CON LA URL RAW DE TU LOGO EN GITHUB
-URL_LOGO_GITHUB = "https://raw.githubusercontent.com/TU_USUARIO/TU_REPOSITORIO/main/logo.png"
+URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/logo.png"
 
 # =========================================================
 # CONEXIÓN CON GOOGLE SHEETS (USANDO SECRETS)
