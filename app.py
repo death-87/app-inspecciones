@@ -55,7 +55,7 @@ def obtener_bytes_logo():
 # CONEXIÓN DIRECTA CON GOOGLE SHEETS VIA GSPREAD
 # =========================================================
 def conectar_google_sheets():
-    """Autentica y devuelve la hoja de trabajo activa."""
+    """Autentica y devuelve el cliente de Google Sheets."""
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
@@ -71,12 +71,32 @@ def conectar_google_sheets():
 
     credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     client = gspread.authorize(credentials)
-    return client.open_by_key(SPREADSHEET_ID).sheet1
+    return client.open_by_key(SPREADSHEET_ID)
+
+def obtener_hoja_actividades():
+    client = conectar_google_sheets()
+    return client.sheet1
+
+def obtener_hoja_planificacion():
+    client = conectar_google_sheets()
+    try:
+        return client.worksheet("Planificacion")
+    except gspread.exceptions.WorksheetNotFound:
+        # Si no existe la pestaña Planificacion, la crea automáticamente con sus cabeceras
+        ws = client.add_worksheet(title="Planificacion", rows=100, cols=25)
+        ws.append_row([
+            "planta", "tipo_informe", "circuito_equipo", "fecha_inicio", "fecha_fin", 
+            "contador_inspeccion", "programa", "inspector_dci", "inspector_ingemars", 
+            "dias_ing_enap", "otep", "informe_iv", "status", "fecha_entrega_ope", 
+            "contador_liberacion", "liberacion_final", "contador_enap", 
+            "contador_cumplimiento_enap", "contador_dias_informe", "archivo_url", "observaciones"
+        ])
+        return ws
 
 def cargar_datos_sheets():
-    """Lee todas las filas almacenadas en la Hoja de forma directa."""
+    """Lee todas las filas almacenadas en la Hoja de Actividades."""
     try:
-        sheet = conectar_google_sheets()
+        sheet = obtener_hoja_actividades()
         filas = sheet.get_all_values()
         
         if len(filas) <= 1:
@@ -97,22 +117,41 @@ def cargar_datos_sheets():
             "actividad_realizada", "avance", "observaciones", "estado_liberacion"
         ])
 
+def cargar_datos_planificacion():
+    """Lee todas las filas almacenadas en la Hoja de Planificación."""
+    try:
+        sheet = obtener_hoja_planificacion()
+        filas = sheet.get_all_values()
+        
+        if len(filas) <= 1:
+            return pd.DataFrame(columns=[
+                "planta", "tipo_informe", "circuito_equipo", "fecha_inicio", "fecha_fin", 
+                "contador_inspeccion", "programa", "inspector_dci", "inspector_ingemars", 
+                "dias_ing_enap", "otep", "informe_iv", "status", "fecha_entrega_ope", 
+                "contador_liberacion", "liberacion_final", "contador_enap", 
+                "contador_cumplimiento_enap", "contador_dias_informe", "archivo_url", "observaciones"
+            ])
+            
+        encabezados = [c.strip().lower() for c in filas[0]]
+        datos = filas[1:]
+        
+        df = pd.DataFrame(datos, columns=encabezados)
+        return df
+    except Exception as e:
+        st.error(f"Error al leer la hoja de Planificación: {e}")
+        return pd.DataFrame()
+
 # =========================================================
 # DISEÑO DE PLANTILLA (FONDO, CABECERA Y PIE PARA PDF)
 # =========================================================
 def dibujar_plantilla(canvas, doc):
-    """Dibuja el fondo y los marcos en la capa inferior del PDF."""
     canvas.saveState()
-    
-    # 0. Fondo de toda la hoja #f8faf6
     canvas.setFillColor(colors.HexColor("#f8faf6"))
     canvas.rect(0, 0, letter[0], letter[1], fill=1, stroke=0)
 
-    # 1. Franja superior verde #619b40 (2 cm)
     canvas.setFillColor(colors.HexColor("#619b40"))
     canvas.rect(0, letter[1] - (2 * cm), letter[0], 2 * cm, fill=1, stroke=0)
 
-    # 2. Logo en la parte SUPERIOR IZQUIERDA
     logo_bytes = obtener_bytes_logo()
     if logo_bytes:
         try:
@@ -122,69 +161,46 @@ def dibujar_plantilla(canvas, doc):
         except Exception:
             pass
 
-    # 3. Texto Institucional Pie de Página
     canvas.setFont("Helvetica", 7)
     canvas.setFillColor(colors.HexColor("#6B7280"))
     canvas.drawCentredString(letter[0] / 2.0, 26, "SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.")
     canvas.drawCentredString(letter[0] / 2.0, 16, "CONTRATO N° AC 31104857")
-    
-    # 4. Numeración de página
     canvas.drawRightString(letter[0] - 30, 16, f"Pág. {canvas.getPageNumber()}")
-    
     canvas.restoreState()
 
-# =========================================================
-# FUNCIÓN PARA GENERAR PDF CON TABLAS POR INSPECTOR
-# =========================================================
-def generar_pdf_informe(df_fecha, fecha_str):
+def generar_pdf_informe(df_filtrado, semana_str):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
         pagesize=letter,
         rightMargin=30,
         leftMargin=30,
-        topMargin=4.5 * cm, # Espacio para la franja y el logo
+        topMargin=4.5 * cm,
         bottomMargin=2.2 * cm
     )
     
     styles = getSampleStyleSheet()
-    
-    title_style = ParagraphStyle(
-        'DocTitle', parent=styles['Heading1'], fontSize=18, leading=22,
-        textColor=colors.HexColor('#1E3A8A'), alignment=1, spaceAfter=4
-    )
-    subtitle_style = ParagraphStyle(
-        'DocSubTitle', parent=styles['Normal'], fontSize=11, leading=14,
-        textColor=colors.HexColor('#4B5563'), alignment=1, spaceAfter=14
-    )
-    inspector_heading_style = ParagraphStyle(
-        'InspectorHeader', parent=styles['Heading2'], fontSize=11, leading=14,
-        textColor=colors.HexColor('#1E3A8A'), fontName='Helvetica-Bold', spaceBefore=6, spaceAfter=6
-    )
-    cell_header_style = ParagraphStyle(
-        'HeaderStyle', parent=styles['Normal'], fontSize=8.5, leading=10,
-        textColor=colors.white, fontName='Helvetica-Bold', alignment=1
-    )
-    cell_body_style = ParagraphStyle(
-        'BodyStyle', parent=styles['Normal'], fontSize=8, leading=10,
-        textColor=colors.HexColor('#1F2937')
-    )
+    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=18, leading=22, textColor=colors.HexColor('#1E3A8A'), alignment=1, spaceAfter=4)
+    subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=11, leading=14, textColor=colors.HexColor('#4B5563'), alignment=1, spaceAfter=14)
+    inspector_heading_style = ParagraphStyle('InspectorHeader', parent=styles['Heading2'], fontSize=11, leading=14, textColor=colors.HexColor('#1E3A8A'), fontName='Helvetica-Bold', spaceBefore=6, spaceAfter=6)
+    cell_header_style = ParagraphStyle('HeaderStyle', parent=styles['Normal'], fontSize=8.5, leading=10, textColor=colors.white, fontName='Helvetica-Bold', alignment=1)
+    cell_body_style = ParagraphStyle('BodyStyle', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#1F2937'))
 
     story = [
         Paragraph("INFORME INSPECCIÓN", title_style),
-        Paragraph(f"<b>Fecha del Reporte:</b> {fecha_str}", subtitle_style),
+        Paragraph(f"<b>Período:</b> {semana_str}", subtitle_style),
         Spacer(1, 6)
     ]
 
-    if not df_fecha.empty:
-        inspectores_grupos = df_fecha.groupby('inspector', sort=False)
+    if not df_filtrado.empty:
+        inspectores_grupos = df_filtrado.groupby('inspector', sort=False)
         total_grupos = len(inspectores_grupos)
         
         for idx, (inspector_nom, group_df) in enumerate(inspectores_grupos):
             story.append(Paragraph(f"👷‍♂️ Inspector: <b>{inspector_nom}</b>", inspector_heading_style))
             
             table_data = [[
-                Paragraph("Planta / Tag", cell_header_style),
+                Paragraph("Fecha / Planta", cell_header_style),
                 Paragraph("Actividad Realizada", cell_header_style),
                 Paragraph("Avance", cell_header_style),
                 Paragraph("Estado", cell_header_style),
@@ -192,6 +208,7 @@ def generar_pdf_informe(df_fecha, fecha_str):
             ]]
             
             for _, row in group_df.iterrows():
+                fecha_reg = row.get("fecha", "-")
                 planta = row.get("planta", "-")
                 tag = row.get("tag_equipo", "-")
                 actividad = row.get("actividad_realizada", "-")
@@ -200,14 +217,14 @@ def generar_pdf_informe(df_fecha, fecha_str):
                 obs = row.get("observaciones", "-")
                 
                 table_data.append([
-                    Paragraph(f"<b>Planta:</b> {planta}<br/><b>TAG:</b> {tag}", cell_body_style),
+                    Paragraph(f"<b>Fecha:</b> {fecha_reg}<br/><b>Planta:</b> {planta}<br/><b>TAG:</b> {tag}", cell_body_style),
                     Paragraph(actividad, cell_body_style),
                     Paragraph(avance, cell_body_style),
                     Paragraph(estado, cell_body_style),
                     Paragraph(obs if obs else "-", cell_body_style)
                 ])
                 
-            t = Table(table_data, colWidths=[100, 160, 50, 92, 150])
+            t = Table(table_data, colWidths=[110, 150, 50, 92, 150])
             t.setStyle(TableStyle([
                 ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
                 ('ALIGN', (0,0), (-1,-1), 'LEFT'),
@@ -220,7 +237,6 @@ def generar_pdf_informe(df_fecha, fecha_str):
             story.append(t)
             story.append(Spacer(1, 10))
 
-            # Franja divisoria Naranja Corporativa
             if idx < total_grupos - 1:
                 divider_table = Table([[""]], colWidths=[552], rowHeights=[4])
                 divider_table.setStyle(TableStyle([
@@ -231,18 +247,12 @@ def generar_pdf_informe(df_fecha, fecha_str):
                 story.append(divider_table)
                 story.append(Spacer(1, 10))
 
-    # onFirstPage y onLaterPages garantizan que el fondo se dibuje DEBAJO del texto
     doc.build(story, onFirstPage=dibujar_plantilla, onLaterPages=dibujar_plantilla)
     buffer.seek(0)
     return buffer
 
-# =========================================================
-# FUNCIÓN PARA GENERAR WORD CON TABLAS POR INSPECTOR
-# =========================================================
-def generar_word_informe(df_fecha, fecha_str):
+def generar_word_informe(df_filtrado, semana_str):
     doc = Document()
-    
-    # Inyectar color de fondo #F8FAF6 en el documento Word
     try:
         background = parse_xml(r'<w:background {} w:color="F8FAF6"/>'.format(nsdecls('w')))
         doc.element.insert(0, background)
@@ -253,7 +263,6 @@ def generar_word_informe(df_fecha, fecha_str):
     section.top_margin = Inches(0.4)
     section.bottom_margin = Inches(1.0)
 
-    # 1. Franja verde superior (2 cm)
     header = section.header
     banner_table = header.add_table(rows=1, cols=1, width=Inches(6.5))
     banner_table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -267,7 +276,6 @@ def generar_word_informe(df_fecha, fecha_str):
     p_banner.paragraph_format.space_before = Pt(20)
     p_banner.paragraph_format.space_after = Pt(20)
 
-    # 2. Logo en parte superior izquierda del cuerpo
     logo_bytes = obtener_bytes_logo()
     if logo_bytes:
         try:
@@ -280,7 +288,6 @@ def generar_word_informe(df_fecha, fecha_str):
         except Exception:
             pass
 
-    # 3. Pie de página fijo en Word
     footer = section.footer
     footer_p = footer.paragraphs[0]
     footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -288,7 +295,6 @@ def generar_word_informe(df_fecha, fecha_str):
     text_run.font.size = Pt(7)
     text_run.font.color.rgb = RGBColor(107, 114, 128)
 
-    # 4. Título y fecha
     title_p = doc.add_paragraph()
     title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     title_run = title_p.add_run("INFORME INSPECCIÓN")
@@ -298,15 +304,14 @@ def generar_word_informe(df_fecha, fecha_str):
     
     date_p = doc.add_paragraph()
     date_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    date_run = date_p.add_run(f"Fecha del Reporte: {fecha_str}")
+    date_run = date_p.add_run(f"Período: {semana_str}")
     date_run.font.size = Pt(11)
     date_run.font.color.rgb = RGBColor(75, 85, 99)
     
     doc.add_paragraph()
 
-    # 5. Tablas agrupadas por Inspector
-    if not df_fecha.empty:
-        inspectores_grupos = list(df_fecha.groupby('inspector', sort=False))
+    if not df_filtrado.empty:
+        inspectores_grupos = list(df_filtrado.groupby('inspector', sort=False))
         total_grupos = len(inspectores_grupos)
 
         for idx, (inspector_nom, group_df) in enumerate(inspectores_grupos):
@@ -321,7 +326,7 @@ def generar_word_informe(df_fecha, fecha_str):
             table.style = 'Table Grid'
             
             hdr_cells = table.rows[0].cells
-            headers = ["Planta / TAG", "Actividad Realizada", "Avance", "Estado", "Observaciones"]
+            headers = ["Fecha / Planta", "Actividad Realizada", "Avance", "Estado", "Observaciones"]
             for i, header_text in enumerate(headers):
                 hdr_cells[i].text = header_text
                 p = hdr_cells[i].paragraphs[0]
@@ -333,7 +338,7 @@ def generar_word_informe(df_fecha, fecha_str):
 
             for _, row in group_df.iterrows():
                 row_cells = table.add_row().cells
-                row_cells[0].text = f"Planta: {row.get('planta', '-')}\nTAG: {row.get('tag_equipo', '-')}"
+                row_cells[0].text = f"Fecha: {row.get('fecha', '-')}\nPlanta: {row.get('planta', '-')}\nTAG: {row.get('tag_equipo', '-')}"
                 row_cells[1].text = str(row.get("actividad_realizada", "-"))
                 row_cells[2].text = str(row.get("avance", "-"))
                 row_cells[3].text = str(row.get("estado_liberacion", "-"))
@@ -422,7 +427,11 @@ st.markdown("---")
 # =========================================================
 menu = st.sidebar.radio(
     "📌 Selecciona una Opción:",
-    ["📝 Registrar Actividad por Inspector", "📊 Historial e Informes"]
+    [
+        "📝 Registrar Actividad por Inspector", 
+        "📊 Historial e Informes", 
+        "📈 Reporte Planificación"
+    ]
 )
 
 # =========================================================
@@ -456,7 +465,7 @@ if menu == "📝 Registrar Actividad por Inspector":
         if btn_guardar:
             if tag_equipo and actividad_realizada:
                 try:
-                    sheet = conectar_google_sheets()
+                    sheet = obtener_hoja_actividades()
                     todas_las_filas = sheet.get_all_values()
                     if len(todas_las_filas) == 0:
                         sheet.append_row([
@@ -486,48 +495,13 @@ if menu == "📝 Registrar Actividad por Inspector":
 # MÓDULO 2: HISTORIAL E INFORMES EN WORD Y PDF
 # =========================================================
 elif menu == "📊 Historial e Informes":
-    st.subheader("🔍 Consulta de Historial y Generación de Informes")
+    st.subheader("🔍 Consulta de Historial y Generación de Informes por Semana")
     
     with st.spinner("Cargando registros desde Google Sheets..."):
         df_historial = cargar_datos_sheets()
     
-    st.markdown("### 📄 Exportar Informe Diarios")
-    col_pdf1, col_pdf2, col_pdf3 = st.columns([2, 1.5, 1.5])
-    
-    with col_pdf1:
-        fecha_informe = st.date_input("🗓️ Selecciona la Fecha del Informe:", datetime.now())
-        fecha_informe_str = str(fecha_informe)
-    
-    df_informe = df_historial[df_historial['fecha'] == fecha_informe_str] if not df_historial.empty and 'fecha' in df_historial.columns else pd.DataFrame()
-    
-    if not df_informe.empty:
-        with col_pdf2:
-            st.write("&nbsp;")
-            pdf_bytes = generar_pdf_informe(df_informe, fecha_informe_str)
-            st.download_button(
-                label="📄 Descargar Informe (PDF)",
-                data=pdf_bytes,
-                file_name=f"INFORME_INSPECCION_{fecha_informe_str}.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
-        with col_pdf3:
-            st.write("&nbsp;")
-            word_bytes = generar_word_informe(df_informe, fecha_informe_str)
-            st.download_button(
-                label="📝 Descargar Informe (Word)",
-                data=word_bytes,
-                file_name=f"INFORME_INSPECCION_{fecha_informe_str}.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                use_container_width=True
-            )
-    else:
-        st.info("No hay registros guardados para esta fecha para generar informes.")
-
-    st.markdown("---")
-    st.markdown("### 📊 Tabla de Consulta e Historial Completo")
-
     if not df_historial.empty:
+        st.markdown("### 🎛️ Filtros Interactivos de Consulta")
         col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns(5)
         
         with col_f1:
@@ -558,19 +532,143 @@ elif menu == "📊 Historial e Informes":
         if "estado_liberacion" in df_filtrado.columns and filtro_estado != "Todos":
             df_filtrado = df_filtrado[df_filtrado['estado_liberacion'] == filtro_estado]
 
-        st.markdown(f"**Total de registros encontrados:** `{len(df_filtrado)}`")
+        st.markdown(f"**Total de registros filtrados:** `{len(df_filtrado)}`")
         
         st.dataframe(
             df_filtrado, 
             use_container_width=True
         )
+
+        st.markdown("---")
+        st.markdown("### 📄 Exportar Informe con el Filtro de Semana Seleccionado")
         
+        col_exp1, col_exp2, col_exp3 = st.columns([2, 1.5, 1.5])
+        with col_exp1:
+            semana_informe = st.selectbox("🗓️ Selecciona la Semana para el Informe:", LISTA_SEMANAS, index=idx_semana_defecto)
+        
+        df_informe_semana = df_historial[df_historial['semana'] == semana_informe] if 'semana' in df_historial.columns else pd.DataFrame()
+        
+        if not df_informe_semana.empty:
+            with col_exp2:
+                st.write("&nbsp;")
+                pdf_bytes = generar_pdf_informe(df_informe_semana, semana_informe)
+                st.download_button(
+                    label="📄 Descargar Informe PDF",
+                    data=pdf_bytes,
+                    file_name=f"INFORME_INSPECCION_{semana_informe.replace(' ', '_')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+            with col_exp3:
+                st.write("&nbsp;")
+                word_bytes = generar_word_informe(df_informe_semana, semana_informe)
+                st.download_button(
+                    label="📝 Descargar Informe Word",
+                    data=word_bytes,
+                    file_name=f"INFORME_INSPECCION_{semana_informe.replace(' ', '_')}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True
+                )
+        else:
+            st.warning(f"⚠️ No hay registros guardados en la nube para la **{semana_informe}**.")
+
+        st.markdown("---")
         csv_data = df_filtrado.to_csv(index=False).encode('utf-8')
         st.download_button(
-            label="📥 Descargar copia local a CSV",
+            label="📥 Descargar tabla filtrada actual a CSV",
             data=csv_data,
-            file_name=f"historial_actividades_{datetime.now().strftime('%Y%m%d')}.csv",
+            file_name=f"historial_actividades_filtrado_{datetime.now().strftime('%Y%m%d')}.csv",
             mime="text/csv"
         )
     else:
         st.info("ℹ️ Aún no hay registros de actividades guardados en la nube.")
+
+# =========================================================
+# MÓDULO 3: REPORTE PLANIFICACIÓN (NUEVO)
+# =========================================================
+elif menu == "📈 Reporte Planificación":
+    st.subheader("📅 Módulo de Registro y Control de Planificación")
+    st.markdown("##### *Ingrese los datos detallados de planificación para sincronizar con la nube.*")
+    
+    with st.form("form_planificacion", clear_on_submit=True):
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            p_planta = st.selectbox("🏭 Planta:", LISTA_PLANTAS)
+            p_tipo_informe = st.text_input("📋 Tipo de Informe:", placeholder="Ej: RBI, END, Estructural...")
+            p_circuito = st.text_input("🔧 Circuito / Equipo:", placeholder="Ej: C-1302 / Línea 12\"...")
+            p_f_inicio = st.date_input("📅 Fecha Inicio Inspección:", datetime.now())
+            p_f_fin = st.date_input("📅 Fecha FIN Inspección:", datetime.now())
+            p_cont_insp = st.number_input("🔢 Contador Inspección:", min_value=0, value=0)
+            p_programa = st.text_input("📌 PROGRAMA:", placeholder="Ej: Programa 2026...")
+
+        with col2:
+            p_insp_dci = st.selectbox("👷‍♂️ Inspector DCI:", ["Todos"] + LISTA_INSPECTORES)
+            p_insp_ingemars = st.selectbox("👷‍♂️ Inspector Ingemars:", ["Todos"] + LISTA_INSPECTORES)
+            p_dias_enap = st.number_input("⏱️ Días entregados por ing. ENAP:", min_value=0, value=0)
+            p_otep = st.text_input("📄 N° OTEP:", placeholder="Ej: OTEP-9988...")
+            p_informe_iv = st.text_input("📑 N° INFORME IV:", placeholder="Ej: IV-2026-01...")
+            p_status = st.selectbox("📌 Status:", ["En Proceso", "Completado", "Atrasado", "Pendiente de Aprobación"])
+            p_f_entrega_ope = st.date_input("📅 Fecha entrega (Ing. Ope.):", datetime.now())
+
+        with col3:
+            p_cont_lib = st.number_input("🔢 Contador entrega liberación (INS - ING.OP):", min_value=0, value=0)
+            p_lib_final = st.text_input("✅ Liberación informe final:", placeholder="Sí / No / Parcial")
+            p_cont_enap = st.number_input("🔢 Contador (INS - ENAP):", min_value=0, value=0)
+            p_cont_cump_enap = st.number_input("📊 Contador de cumplimiento Ing. ENAP:", min_value=0, value=0)
+            p_cont_dias_inf = st.number_input("📉 Contador días de informe:", min_value=0, value=0)
+            p_archivo_url = st.text_input("🔗 Archivo URL:", placeholder="https://...")
+
+        p_observaciones = st.text_area("💬 Observaciones:", placeholder="Notas de planificación...")
+
+        btn_guardar_plan = st.form_submit_button("☁️ Guardar Planificación en Google Sheets")
+        
+        if btn_guardar_plan:
+            try:
+                ws_plan = obtener_hoja_planificacion()
+                nueva_fila_plan = [
+                    p_planta,
+                    p_tipo_informe.strip(),
+                    p_circuito.strip(),
+                    str(p_f_inicio),
+                    str(p_f_fin),
+                    str(p_cont_insp),
+                    p_programa.strip(),
+                    p_insp_dci,
+                    p_insp_ingemars,
+                    str(p_dias_enap),
+                    p_otep.strip(),
+                    p_informe_iv.strip(),
+                    p_status,
+                    str(p_f_entrega_ope),
+                    str(p_cont_lib),
+                    p_lib_final.strip(),
+                    str(p_cont_enap),
+                    str(p_cont_cump_enap),
+                    str(p_cont_dias_inf),
+                    p_archivo_url.strip(),
+                    p_observaciones.strip()
+                ]
+                ws_plan.append_row(nueva_fila_plan)
+                st.success("✅ ¡Datos de planificación guardados con éxito en la pestaña 'Planificacion' de Google Sheets!")
+            except Exception as ex:
+                st.error(f"❌ Error al guardar planificación: {ex}")
+
+    st.markdown("---")
+    st.markdown("### 📊 Historial y Registros de Planificación en la Nube")
+    
+    with st.spinner("Cargando datos de planificación..."):
+        df_plan = cargar_datos_planificacion()
+        
+    if not df_plan.empty:
+        st.dataframe(df_plan, use_container_width=True)
+        
+        csv_plan = df_plan.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Descargar Planificación a CSV",
+            data=csv_plan,
+            file_name=f"reporte_planificacion_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
+    else:
+        st.info("ℹ️ Aún no hay registros de planificación guardados.")
