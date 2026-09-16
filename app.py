@@ -3,6 +3,7 @@ import requests
 import streamlit as st
 import pandas as pd
 import gspread
+from PIL import Image as PILImage
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 
@@ -36,6 +37,20 @@ URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/m
 
 # 🆔 ID DE TU HOJA DE GOOGLE SHEETS
 SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
+
+# =========================================================
+# DESCARGA Y CACHÉ DEL LOGO EN MEMORIA
+# =========================================================
+@st.cache_data(ttl=3600)
+def obtener_bytes_logo():
+    """Descarga el logo una sola vez y lo mantiene en caché."""
+    try:
+        response = requests.get(URL_LOGO_GITHUB, timeout=5)
+        if response.status_code == 200:
+            return response.content
+    except Exception:
+        pass
+    return None
 
 # =========================================================
 # CONEXIÓN DIRECTA CON GOOGLE SHEETS VIA GSPREAD
@@ -80,13 +95,13 @@ def cargar_datos_sheets():
         st.error(f"Error al leer la hoja de Google Sheets: {e}")
         return pd.DataFrame(columns=[
             "fecha", "semana", "planta", "inspector", "tag_equipo", 
-            "actividad_realizada", "observaciones", "estado_liberacion"
+            "actividad_realizada", "avance", "observaciones", "estado_liberacion"
         ])
 
 # =========================================================
-# CLASE CANVAS PERSONALIZADA PARA PIE Y CABECERA MULTIPÁGINA EN PDF
+# CLASE CANVAS PARA PLANTILLA CORPORATIVA EN PDF
 # =========================================================
-class NumberedCanvas(canvas.Canvas):
+class PlantillaCorporativaCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._saved_page_states = []
@@ -99,38 +114,37 @@ class NumberedCanvas(canvas.Canvas):
         num_pages = len(self._saved_page_states)
         for state in self._saved_page_states:
             self.__dict__.update(state)
-            self.draw_page_decorations(num_pages)
+            self.dibujar_elementos_corporativos(num_pages)
             super().showPage()
         super().save()
 
-    def draw_page_decorations(self, page_count):
-        # 1. Franja superior de 2 cm en color #619b40
+    def dibujar_elementos_corporativos(self, page_count):
+        # 1. Franja superior de 2 cm en verde #619b40
         self.setFillColor(colors.HexColor("#619b40"))
         self.rect(0, 792 - (2 * cm), 612, 2 * cm, fill=1, stroke=0)
 
-        # 2. Descarga e Inserción del Logo en el Pie de página
-        try:
-            response = requests.get(URL_LOGO_GITHUB, timeout=3)
-            if response.status_code == 200:
-                img_data = io.BytesIO(response.content)
-                self.drawImage(img_data, 246, 55, width=120, height=45, preserveAspectRatio=True, mask='auto')
-        except Exception:
-            pass
+        # 2. Dibujar Logo en el pie de página
+        logo_bytes = obtener_bytes_logo()
+        if logo_bytes:
+            try:
+                img_stream = io.BytesIO(logo_bytes)
+                self.drawImage(img_stream, 246, 52, width=120, height=45, preserveAspectRatio=True, mask='auto')
+            except Exception:
+                pass
 
         # 3. Texto Institucional Pie de Página
         self.setFont("Helvetica", 7)
-        self.setFillColor(colors.HexColor("#9CA3AF"))
-        self.drawCentredString(306, 38, "SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.")
-        self.drawCentredString(306, 28, "CONTRATO N° AC 31104857")
+        self.setFillColor(colors.HexColor("#6B7280"))
+        self.drawCentredString(306, 36, "SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.")
+        self.drawCentredString(306, 26, "CONTRATO N° AC 31104857")
         
         # 4. Numeración de página
-        self.drawCentredString(306, 16, f"Página {self._pageNumber} de {page_count}")
+        self.drawCentredString(306, 14, f"Página {self._pageNumber} de {page_count}")
 
 # =========================================================
-# FUNCIÓN PARA GENERAR PDF DEL INFORME DE INSPECCIÓN
+# FUNCIÓN PARA GENERAR PDF CON PLANTILLA
 # =========================================================
 def generar_pdf_informe(df_fecha, fecha_str):
-    """Genera un archivo PDF estructurado para la fecha seleccionada."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -138,7 +152,7 @@ def generar_pdf_informe(df_fecha, fecha_str):
         rightMargin=30,
         leftMargin=30,
         topMargin=2.5 * cm,
-        bottomMargin=3.5 * cm
+        bottomMargin=3.8 * cm
     )
     
     styles = getSampleStyleSheet()
@@ -203,21 +217,20 @@ def generar_pdf_informe(df_fecha, fecha_str):
         ]))
         story.append(t)
 
-    doc.build(story, canvasmaker=NumberedCanvas)
+    doc.build(story, canvasmaker=PlantillaCorporativaCanvas)
     buffer.seek(0)
     return buffer
 
 # =========================================================
-# FUNCIÓN PARA GENERAR WORD (.DOCX) DEL INFORME
+# FUNCIÓN PARA GENERAR WORD CON PLANTILLA
 # =========================================================
 def generar_word_informe(df_fecha, fecha_str):
-    """Genera un archivo Word (.docx) estructurado para la fecha seleccionada."""
     doc = Document()
     section = doc.sections[0]
-    section.top_margin = Inches(0.5)
-    section.bottom_margin = Inches(1.5)
+    section.top_margin = Inches(0.4)
+    section.bottom_margin = Inches(1.6)
 
-    # 1. FRANJA SUPERIOR VERDE DE 2 CM EN CABECERA DE WORD
+    # 1. Franja verde superior (2 cm)
     header = section.header
     banner_table = header.add_table(rows=1, cols=1, width=Inches(6.5))
     banner_table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -228,29 +241,29 @@ def generar_word_informe(df_fecha, fecha_str):
     cell_h._tc.get_or_add_tcPr().append(shading_elm)
     
     p_banner = cell_h.paragraphs[0]
-    p_banner.paragraph_format.space_before = Pt(20) # 2 cm aprox de alto
-    p_banner.paragraph_format.space_after = Pt(20)
+    p_banner.paragraph_format.space_before = Pt(22)
+    p_banner.paragraph_format.space_after = Pt(22)
 
-    # 2. PIE DE PÁGINA FIX EN TODAS LAS HOJAS DE WORD
+    # 2. Pie de página fijo en Word
     footer = section.footer
     footer_p = footer.paragraphs[0]
     footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
-    try:
-        response = requests.get(URL_LOGO_GITHUB, timeout=3)
-        if response.status_code == 200:
-            img_data = io.BytesIO(response.content)
+    logo_bytes = obtener_bytes_logo()
+    if logo_bytes:
+        try:
+            img_stream = io.BytesIO(logo_bytes)
             logo_run = footer_p.add_run()
-            logo_run.add_picture(img_data, width=Inches(1.6))
+            logo_run.add_picture(img_stream, width=Inches(1.6))
             footer_p.add_run("\n")
-    except Exception:
-        pass
+        except Exception:
+            pass
 
     text_run = footer_p.add_run("SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.\nCONTRATO N° AC 31104857")
     text_run.font.size = Pt(7)
-    text_run.font.color.rgb = RGBColor(156, 163, 175)
+    text_run.font.color.rgb = RGBColor(107, 114, 128)
 
-    # 3. CONTENIDO DEL CUERPO (TÍTULO Y TABLA)
+    # 3. Encabezado del documento
     title_p = doc.add_paragraph()
     title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     title_run = title_p.add_run("INFORME INSPECCIÓN")
@@ -428,9 +441,6 @@ elif menu == "📊 Historial e Informes":
     with st.spinner("Cargando registros desde Google Sheets..."):
         df_historial = cargar_datos_sheets()
     
-    # ---------------------------------------------------------
-    # SECCIÓN: GENERADOR DE INFORME DIARIO EN PDF Y WORD
-    # ---------------------------------------------------------
     st.markdown("### 📄 Exportar Informe Diarios")
     col_pdf1, col_pdf2, col_pdf3 = st.columns([2, 1.5, 1.5])
     
