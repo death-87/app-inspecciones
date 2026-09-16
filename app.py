@@ -13,6 +13,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import cm
 from reportlab.pdfgen import canvas
+from reportlab.lib.utils import ImageReader
 
 # Librerías para generación de Word
 from docx import Document
@@ -118,17 +119,23 @@ class PlantillaCorporativaCanvas(canvas.Canvas):
         super().save()
 
     def dibujar_elementos_corporativos(self, page_count):
-        # 1. Franja superior verde #619b40 (2 cm)
+        # 0. Fondo de toda la hoja color #f8faf6
+        self.setFillColor(colors.HexColor("#f8faf6"))
+        self.rect(0, 0, 612, 792, fill=1, stroke=0)
+
+        # 1. Franja superior verde #619b40 (2 cm exactos)
         self.setFillColor(colors.HexColor("#619b40"))
         self.rect(0, 792 - (2 * cm), 612, 2 * cm, fill=1, stroke=0)
 
-        # 2. Logo en la parte SUPERIOR IZQUIERDA (sobre el área blanca)
+        # 2. Logo en la parte SUPERIOR IZQUIERDA
         logo_bytes = obtener_bytes_logo()
         if logo_bytes:
             try:
                 img_stream = io.BytesIO(logo_bytes)
-                self.drawImage(img_stream, 30, 792 - (2 * cm) - 45, width=110, height=40, preserveAspectRatio=True, mask='auto')
-            except Exception:
+                img = ImageReader(img_stream)
+                # Posicionado justo debajo de la franja verde, alineado a la izquierda (X=30)
+                self.drawImage(img, 30, 792 - (2 * cm) - 55, width=120, height=45, preserveAspectRatio=True, mask='auto')
+            except Exception as e:
                 pass
 
         # 3. Texto Institucional Pie de Página
@@ -150,7 +157,7 @@ def generar_pdf_informe(df_fecha, fecha_str):
         pagesize=letter,
         rightMargin=30,
         leftMargin=30,
-        topMargin=3.2 * cm,
+        topMargin=4.5 * cm, # Ampliado para dejar espacio al logo superior
         bottomMargin=2.2 * cm
     )
     
@@ -221,14 +228,15 @@ def generar_pdf_informe(df_fecha, fecha_str):
                 ('ALIGN', (0,0), (-1,-1), 'LEFT'),
                 ('VALIGN', (0,0), (-1,-1), 'TOP'),
                 ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#D1D5DB')),
-                ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F9FAFB')]),
+                # Fondo intercalado entre blanco y gris claro corporativo
+                ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F3F4F6')]),
                 ('BOTTOMPADDING', (0,0), (-1,-1), 5),
                 ('TOPPADDING', (0,0), (-1,-1), 5),
             ]))
             story.append(t)
             story.append(Spacer(1, 10))
 
-            # Franja divisoria de color Naranja Corporativo (#F97316) entre distintas tablas de inspectores
+            # Franja divisoria Naranja Corporativa
             if idx < total_grupos - 1:
                 divider_table = Table([[""]], colWidths=[552], rowHeights=[4])
                 divider_table.setStyle(TableStyle([
@@ -248,6 +256,14 @@ def generar_pdf_informe(df_fecha, fecha_str):
 # =========================================================
 def generar_word_informe(df_fecha, fecha_str):
     doc = Document()
+    
+    # Inyectar color de fondo #F8FAF6 en el documento Word
+    try:
+        background = parse_xml(r'<w:background {} w:color="F8FAF6"/>'.format(nsdecls('w')))
+        doc.element.insert(0, background)
+    except Exception:
+        pass
+
     section = doc.sections[0]
     section.top_margin = Inches(0.4)
     section.bottom_margin = Inches(1.0)
@@ -338,6 +354,7 @@ def generar_word_informe(df_fecha, fecha_str):
                 row_cells[3].text = str(row.get("estado_liberacion", "-"))
                 row_cells[4].text = str(row.get("observaciones", "-")) if row.get("observaciones") else "-"
                 
+                # Fondo condicional opcional para Word si es necesario
                 for cell in row_cells:
                     for p in cell.paragraphs:
                         for r in p.runs:
