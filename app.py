@@ -26,9 +26,9 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 def cargar_datos_sheets():
     """Lee las filas almacenadas en la Hoja de Google."""
     try:
-        return conn.read(spreadsheet=URL_GOOGLE_SHEETS, ttl=0)
+        return conn.read(ttl=0)
     except Exception as e:
-        st.error(f"Error de conexión con Google Sheets: {e}")
+        st.error(f"Error de lectura en Google Sheets: {e}")
         return pd.DataFrame(columns=[
             "fecha", "inspector", "tag_equipo", 
             "actividad_realizada", "observaciones", "estado_liberacion"
@@ -131,13 +131,13 @@ if menu == "📝 Registrar Actividad por Inspector":
                     }])
                     
                     df_actualizado = pd.concat([df_actual, nueva_fila], ignore_index=True)
-                    conn.update(spreadsheet=URL_GOOGLE_SHEETS, data=df_actualizado)
-                    
-                    st.success(f"✅ ¡Actividad de **{inspector_seleccionado}** guardada correctamente en la Nube!")
-                except Exception as ex:
-                    st.error(f"❌ Ocurrió un error al guardar en la nube: {ex}")
-            else:
-                st.error("⚠️ Por favor completa los campos obligatorios: **TAG del Equipo** y **Actividades Realizadas**.")
+            
+            # Escribe directamente usando la cuenta de servicio autenticada
+            conn.update(data=df_actualizado)
+            
+            st.success(f"✅ ¡Actividad de **{inspector_seleccionado}** guardada correctamente en la Nube!")
+        except Exception as ex:
+            st.error(f"❌ Ocurrió un error al guardar en la nube: {ex}")
 
 # =========================================================
 # MODULO 2: HISTORIAL EN LA NUBE
