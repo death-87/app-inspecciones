@@ -1,3 +1,4 @@
+import re
 import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
@@ -19,9 +20,33 @@ URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/m
 SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 
 # =========================================================
+# LIMPIEZA DE LA CLAVE PRIVADA PARA EVITAR ERROR PEM
+# =========================================================
+def obtener_credenciales_limpias():
+    """Limpia los saltos de línea y formateo de la clave privada."""
+    creds = dict(st.secrets["connections"]["gsheets"])
+    if "private_key" in creds:
+        key = creds["private_key"]
+        # Convertir caracteres de escape \n a saltos reales si existen
+        key = key.replace("\\n", "\n")
+        # Asegurar formato PEM estandarizado
+        lines = [line.strip() for line in key.split("\n") if line.strip()]
+        creds["private_key"] = "\n".join(lines) + "\n"
+    return creds
+
+# =========================================================
 # CONEXIÓN CON GOOGLE SHEETS
 # =========================================================
-conn = st.connection("gsheets", type=GSheetsConnection)
+try:
+    credenciales_limpias = obtener_credenciales_limpias()
+    conn = st.connection(
+        "gsheets",
+        type=GSheetsConnection,
+        service_account_info=credenciales_limpias
+    )
+except Exception:
+    # Si falla la inyección personalizada, cae al método nativo
+    conn = st.connection("gsheets", type=GSheetsConnection)
 
 def cargar_datos_sheets():
     """Lee las filas almacenadas en la Hoja de Google Sheets."""
