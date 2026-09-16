@@ -19,14 +19,22 @@ URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/m
 SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 
 # =========================================================
-# CONEXIÓN CON GOOGLE SHEETS (USANDO SECRETS)
+# SANITIZACIÓN AUTOMÁTICA DE LA CLAVE PRIVADA (CORRECCIÓN PEM)
+# =========================================================
+if "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
+    if "private_key" in st.secrets["connections"]["gsheets"]:
+        key = st.secrets["connections"]["gsheets"]["private_key"]
+        # Convertimos los \n de texto en saltos de linea reales en memoria
+        st.secrets["connections"]["gsheets"]["private_key"] = key.replace("\\n", "\n")
+
+# =========================================================
+# CONEXIÓN CON GOOGLE SHEETS
 # =========================================================
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def cargar_datos_sheets():
     """Lee las filas almacenadas en la Hoja de Google Sheets."""
     try:
-        # Se especifica el spreadsheet explicitamente para evitar <Response [200]>
         return conn.read(spreadsheet=SPREADSHEET_ID, ttl=0)
     except Exception as e:
         st.error(f"Error al leer la hoja de Google Sheets: {e}")
@@ -57,13 +65,11 @@ ESTADOS_LIBERACION = [
 # =========================================================
 # ENCABEZADO Y VISUALIZACIÓN DEL LOGO
 # =========================================================
-# Logo en la barra lateral
 try:
     st.sidebar.image(URL_LOGO_GITHUB, use_container_width=True)
 except Exception:
     pass
 
-# Logo y Título Principal
 col_logo, col_titulo = st.columns([1, 4])
 
 with col_logo:
@@ -120,10 +126,8 @@ if menu == "📝 Registrar Actividad por Inspector":
         if btn_guardar:
             if tag_equipo and actividad_realizada:
                 try:
-                    # 1. Obtenemos los registros existentes
                     df_actual = cargar_datos_sheets()
                     
-                    # 2. Preparamos el nuevo registro
                     nueva_fila = pd.DataFrame([{
                         "fecha": str(fecha_actividad),
                         "inspector": inspector_seleccionado,
@@ -133,7 +137,6 @@ if menu == "📝 Registrar Actividad por Inspector":
                         "estado_liberacion": estado_liberacion
                     }])
                     
-                    # 3. Concatenamos y enviamos la actualización especificando la hoja
                     df_actualizado = pd.concat([df_actual, nueva_fila], ignore_index=True)
                     conn.update(spreadsheet=SPREADSHEET_ID, data=df_actualizado)
                     
@@ -153,7 +156,6 @@ elif menu == "📊 Historial en la Nube":
         df_historial = cargar_datos_sheets()
     
     if not df_historial.empty and "inspector" in df_historial.columns:
-        # Filtros
         col_filtro1, col_filtro2, col_filtro3 = st.columns(3)
         
         with col_filtro1:
@@ -170,7 +172,6 @@ elif menu == "📊 Historial en la Nube":
                 ["Todos"] + ESTADOS_LIBERACION
             )
 
-        # Aplicación de Filtros
         df_filtrado = df_historial.copy()
         
         if filtro_inspector != "Todos":
@@ -184,13 +185,11 @@ elif menu == "📊 Historial en la Nube":
 
         st.markdown(f"**Total de registros encontrados:** `{len(df_filtrado)}`")
         
-        # Tabla Interactiva
         st.dataframe(
             df_filtrado, 
             use_container_width=True
         )
         
-        # Descargar copia local en CSV
         csv_data = df_filtrado.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="📥 Descargar copia local a CSV",
