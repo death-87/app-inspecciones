@@ -373,9 +373,9 @@ def generar_word_informe(df_filtrado, semana_str):
 LISTA_INSPECTORES = [
     "Juan Navarrete",
     "Jorge Hernandez",
-    "Inspector 3",
-    "Inspector 4",
-    "Inspector 5"
+    "Arlem Sarmiento",
+    "Harold Castillo",
+    "Miguel Chirinos"
 ]
 
 LISTA_INSPECTORES_DCI = [
