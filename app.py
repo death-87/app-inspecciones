@@ -1,7 +1,7 @@
-import re
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
+import gspread
+from google.oauth2.service_account import Credentials
 from datetime import datetime
 
 # =========================================================
@@ -20,38 +20,31 @@ URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/m
 SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 
 # =========================================================
-# LIMPIEZA DE LA CLAVE PRIVADA PARA EVITAR ERROR PEM
+# CONEXIÓN DIRECTA CON GOOGLE SHEETS VIA GSPREAD
 # =========================================================
-def obtener_credenciales_limpias():
-    """Limpia los saltos de línea y formateo de la clave privada."""
-    creds = dict(st.secrets["connections"]["gsheets"])
-    if "private_key" in creds:
-        key = creds["private_key"]
-        # Convertir caracteres de escape \n a saltos reales si existen
-        key = key.replace("\\n", "\n")
-        # Asegurar formato PEM estandarizado
-        lines = [line.strip() for line in key.split("\n") if line.strip()]
-        creds["private_key"] = "\n".join(lines) + "\n"
-    return creds
-
-# =========================================================
-# CONEXIÓN CON GOOGLE SHEETS
-# =========================================================
-try:
-    credenciales_limpias = obtener_credenciales_limpias()
-    conn = st.connection(
-        "gsheets",
-        type=GSheetsConnection,
-        service_account_info=credenciales_limpias
-    )
-except Exception:
-    # Si falla la inyección personalizada, cae al método nativo
-    conn = st.connection("gsheets", type=GSheetsConnection)
+@st.cache_resource
+def conectar_google_sheets():
+    """Autentica y devuelve el cliente de Google Sheets."""
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    
+    # Preparamos las credenciales desde Secrets sanitizando la private_key
+    creds_dict = dict(st.secrets["connections"]["gsheets"])
+    if "private_key" in creds_dict:
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        
+    credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    client = gspread.authorize(credentials)
+    return client.open_by_key(SPREADSHEET_ID).sheet1
 
 def cargar_datos_sheets():
-    """Lee las filas almacenadas en la Hoja de Google Sheets."""
+    """Lee todas las filas almacenadas en la Hoja."""
     try:
-        return conn.read(spreadsheet=SPREADSHEET_ID, ttl=0)
+        sheet = conectar_google_sheets()
+        data = sheet.get_all_records()
+        return pd.DataFrame(data)
     except Exception as e:
         st.error(f"Error al leer la hoja de Google Sheets: {e}")
         return pd.DataFrame(columns=[
@@ -142,19 +135,19 @@ if menu == "📝 Registrar Actividad por Inspector":
         if btn_guardar:
             if tag_equipo and actividad_realizada:
                 try:
-                    df_actual = cargar_datos_sheets()
+                    sheet = conectar_google_sheets()
                     
-                    nueva_fila = pd.DataFrame([{
-                        "fecha": str(fecha_actividad),
-                        "inspector": inspector_seleccionado,
-                        "tag_equipo": tag_equipo.strip(),
-                        "actividad_realizada": actividad_realizada.strip(),
-                        "observaciones": observaciones.strip(),
-                        "estado_liberacion": estado_liberacion
-                    }])
+                    nueva_fila = [
+                        str(fecha_actividad),
+                        inspector_seleccionado,
+                        tag_equipo.strip(),
+                        actividad_realizada.strip(),
+                        observaciones.strip(),
+                        estado_liberacion
+                    ]
                     
-                    df_actualizado = pd.concat([df_actual, nueva_fila], ignore_index=True)
-                    conn.update(spreadsheet=SPREADSHEET_ID, data=df_actualizado)
+                    # Agrega la fila directamente al final de la hoja sin reescribir todo
+                    sheet.append_row(nueva_fila)
                     
                     st.success(f"✅ ¡Actividad de **{inspector_seleccionado}** guardada con éxito en Google Sheets!")
                 except Exception as ex:
