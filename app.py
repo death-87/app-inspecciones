@@ -12,8 +12,11 @@ st.set_page_config(
     layout="wide"
 )
 
-# 🔗 REEMPLAZA ESTA URL CON LA URL RAW DE TU LOGO EN GITHUB
+# 🔗 URL RAW DE TU LOGO EN GITHUB
 URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/logo.png"
+
+# 🆔 ID DE TU HOJA DE GOOGLE SHEETS
+SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 
 # =========================================================
 # CONEXIÓN CON GOOGLE SHEETS (USANDO SECRETS)
@@ -23,8 +26,8 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 def cargar_datos_sheets():
     """Lee las filas almacenadas en la Hoja de Google Sheets."""
     try:
-        # ttl=0 fuerza a leer los datos más recientes en la nube sin usar caché
-        return conn.read(ttl=0)
+        # Se especifica el spreadsheet explicitamente para evitar <Response [200]>
+        return conn.read(spreadsheet=SPREADSHEET_ID, ttl=0)
     except Exception as e:
         st.error(f"Error al leer la hoja de Google Sheets: {e}")
         return pd.DataFrame(columns=[
@@ -130,9 +133,9 @@ if menu == "📝 Registrar Actividad por Inspector":
                         "estado_liberacion": estado_liberacion
                     }])
                     
-                    # 3. Concatenamos y enviamos la actualización
+                    # 3. Concatenamos y enviamos la actualización especificando la hoja
                     df_actualizado = pd.concat([df_actual, nueva_fila], ignore_index=True)
-                    conn.update(data=df_actualizado)
+                    conn.update(spreadsheet=SPREADSHEET_ID, data=df_actualizado)
                     
                     st.success(f"✅ ¡Actividad de **{inspector_seleccionado}** guardada con éxito en Google Sheets!")
                 except Exception as ex:
