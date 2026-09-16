@@ -3,7 +3,6 @@ import requests
 import streamlit as st
 import pandas as pd
 import gspread
-from PIL import Image as PILImage
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 
@@ -119,30 +118,30 @@ class PlantillaCorporativaCanvas(canvas.Canvas):
         super().save()
 
     def dibujar_elementos_corporativos(self, page_count):
-        # 1. Franja superior de 2 cm en verde #619b40
+        # 1. Franja superior verde #619b40 (2 cm)
         self.setFillColor(colors.HexColor("#619b40"))
         self.rect(0, 792 - (2 * cm), 612, 2 * cm, fill=1, stroke=0)
 
-        # 2. Dibujar Logo en el pie de página
+        # 2. Logo en la parte SUPERIOR IZQUIERDA (sobre el área blanca)
         logo_bytes = obtener_bytes_logo()
         if logo_bytes:
             try:
                 img_stream = io.BytesIO(logo_bytes)
-                self.drawImage(img_stream, 246, 52, width=120, height=45, preserveAspectRatio=True, mask='auto')
+                self.drawImage(img_stream, 30, 792 - (2 * cm) - 45, width=110, height=40, preserveAspectRatio=True, mask='auto')
             except Exception:
                 pass
 
         # 3. Texto Institucional Pie de Página
         self.setFont("Helvetica", 7)
         self.setFillColor(colors.HexColor("#6B7280"))
-        self.drawCentredString(306, 36, "SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.")
-        self.drawCentredString(306, 26, "CONTRATO N° AC 31104857")
+        self.drawCentredString(306, 26, "SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.")
+        self.drawCentredString(306, 16, "CONTRATO N° AC 31104857")
         
         # 4. Numeración de página
-        self.drawCentredString(306, 14, f"Página {self._pageNumber} de {page_count}")
+        self.drawRightString(582, 16, f"Pág. {self._pageNumber} de {page_count}")
 
 # =========================================================
-# FUNCIÓN PARA GENERAR PDF CON PLANTILLA
+# FUNCIÓN PARA GENERAR PDF CON TABLAS POR INSPECTOR Y FRANJA NARANJA
 # =========================================================
 def generar_pdf_informe(df_fecha, fecha_str):
     buffer = io.BytesIO()
@@ -151,22 +150,26 @@ def generar_pdf_informe(df_fecha, fecha_str):
         pagesize=letter,
         rightMargin=30,
         leftMargin=30,
-        topMargin=2.5 * cm,
-        bottomMargin=3.8 * cm
+        topMargin=3.2 * cm,
+        bottomMargin=2.2 * cm
     )
     
     styles = getSampleStyleSheet()
     
     title_style = ParagraphStyle(
-        'DocTitle', parent=styles['Heading1'], fontSize=20, leading=24,
-        textColor=colors.HexColor('#1E3A8A'), alignment=1, spaceAfter=8
+        'DocTitle', parent=styles['Heading1'], fontSize=18, leading=22,
+        textColor=colors.HexColor('#1E3A8A'), alignment=1, spaceAfter=4
     )
     subtitle_style = ParagraphStyle(
         'DocSubTitle', parent=styles['Normal'], fontSize=11, leading=14,
-        textColor=colors.HexColor('#4B5563'), alignment=1, spaceAfter=18
+        textColor=colors.HexColor('#4B5563'), alignment=1, spaceAfter=14
+    )
+    inspector_heading_style = ParagraphStyle(
+        'InspectorHeader', parent=styles['Heading2'], fontSize=11, leading=14,
+        textColor=colors.HexColor('#1E3A8A'), fontName='Helvetica-Bold', spaceBefore=6, spaceAfter=6
     )
     cell_header_style = ParagraphStyle(
-        'HeaderStyle', parent=styles['Normal'], fontSize=9, leading=11,
+        'HeaderStyle', parent=styles['Normal'], fontSize=8.5, leading=10,
         textColor=colors.white, fontName='Helvetica-Bold', alignment=1
     )
     cell_body_style = ParagraphStyle(
@@ -177,58 +180,77 @@ def generar_pdf_informe(df_fecha, fecha_str):
     story = [
         Paragraph("INFORME INSPECCIÓN", title_style),
         Paragraph(f"<b>Fecha del Reporte:</b> {fecha_str}", subtitle_style),
-        Spacer(1, 10)
+        Spacer(1, 6)
     ]
 
     if not df_fecha.empty:
-        table_data = [[
-            Paragraph("Inspector", cell_header_style),
-            Paragraph("Planta / Tag", cell_header_style),
-            Paragraph("Actividad Realizada", cell_header_style),
-            Paragraph("Avance", cell_header_style),
-            Paragraph("Estado", cell_header_style)
-        ]]
+        inspectores_grupos = df_fecha.groupby('inspector', sort=False)
+        total_grupos = len(inspectores_grupos)
         
-        for _, row in df_fecha.iterrows():
-            inspector = row.get("inspector", "-")
-            planta = row.get("planta", "-")
-            tag = row.get("tag_equipo", "-")
-            actividad = row.get("actividad_realizada", "-")
-            avance = row.get("avance", "-")
-            estado = row.get("estado_liberacion", "-")
+        for idx, (inspector_nom, group_df) in enumerate(inspectores_grupos):
+            # Encabezado del Inspector
+            story.append(Paragraph(f"👷‍♂️ Inspector: <b>{inspector_nom}</b>", inspector_heading_style))
             
-            table_data.append([
-                Paragraph(inspector, cell_body_style),
-                Paragraph(f"<b>Planta:</b> {planta}<br/><b>TAG:</b> {tag}", cell_body_style),
-                Paragraph(actividad, cell_body_style),
-                Paragraph(avance, cell_body_style),
-                Paragraph(estado, cell_body_style)
-            ])
+            table_data = [[
+                Paragraph("Planta / Tag", cell_header_style),
+                Paragraph("Actividad Realizada", cell_header_style),
+                Paragraph("Avance", cell_header_style),
+                Paragraph("Estado", cell_header_style),
+                Paragraph("Observaciones", cell_header_style)
+            ]]
             
-        t = Table(table_data, colWidths=[100, 110, 200, 50, 92])
-        t.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
-            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#D1D5DB')),
-            ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F9FAFB')]),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-            ('TOPPADDING', (0,0), (-1,-1), 6),
-        ]))
-        story.append(t)
+            for _, row in group_df.iterrows():
+                planta = row.get("planta", "-")
+                tag = row.get("tag_equipo", "-")
+                actividad = row.get("actividad_realizada", "-")
+                avance = row.get("avance", "-")
+                estado = row.get("estado_liberacion", "-")
+                obs = row.get("observaciones", "-")
+                
+                table_data.append([
+                    Paragraph(f"<b>Planta:</b> {planta}<br/><b>TAG:</b> {tag}", cell_body_style),
+                    Paragraph(actividad, cell_body_style),
+                    Paragraph(avance, cell_body_style),
+                    Paragraph(estado, cell_body_style),
+                    Paragraph(obs if obs else "-", cell_body_style)
+                ])
+                
+            t = Table(table_data, colWidths=[100, 160, 50, 92, 150])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
+                ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#D1D5DB')),
+                ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F9FAFB')]),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+                ('TOPPADDING', (0,0), (-1,-1), 5),
+            ]))
+            story.append(t)
+            story.append(Spacer(1, 10))
+
+            # Franja divisoria de color Naranja Corporativo (#F97316) entre distintas tablas de inspectores
+            if idx < total_grupos - 1:
+                divider_table = Table([[""]], colWidths=[552], rowHeights=[4])
+                divider_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F97316')),
+                    ('TOPPADDING', (0, 0), (-1, -1), 0),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+                ]))
+                story.append(divider_table)
+                story.append(Spacer(1, 10))
 
     doc.build(story, canvasmaker=PlantillaCorporativaCanvas)
     buffer.seek(0)
     return buffer
 
 # =========================================================
-# FUNCIÓN PARA GENERAR WORD CON PLANTILLA
+# FUNCIÓN PARA GENERAR WORD CON TABLAS POR INSPECTOR Y FRANJA NARANJA
 # =========================================================
 def generar_word_informe(df_fecha, fecha_str):
     doc = Document()
     section = doc.sections[0]
     section.top_margin = Inches(0.4)
-    section.bottom_margin = Inches(1.6)
+    section.bottom_margin = Inches(1.0)
 
     # 1. Franja verde superior (2 cm)
     header = section.header
@@ -241,33 +263,35 @@ def generar_word_informe(df_fecha, fecha_str):
     cell_h._tc.get_or_add_tcPr().append(shading_elm)
     
     p_banner = cell_h.paragraphs[0]
-    p_banner.paragraph_format.space_before = Pt(22)
-    p_banner.paragraph_format.space_after = Pt(22)
+    p_banner.paragraph_format.space_before = Pt(20)
+    p_banner.paragraph_format.space_after = Pt(20)
 
-    # 2. Pie de página fijo en Word
-    footer = section.footer
-    footer_p = footer.paragraphs[0]
-    footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    
+    # 2. Logo en parte superior izquierda del cuerpo
     logo_bytes = obtener_bytes_logo()
     if logo_bytes:
         try:
             img_stream = io.BytesIO(logo_bytes)
-            logo_run = footer_p.add_run()
-            logo_run.add_picture(img_stream, width=Inches(1.6))
-            footer_p.add_run("\n")
+            logo_p = doc.add_paragraph()
+            logo_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            logo_p.paragraph_format.space_after = Pt(4)
+            logo_run = logo_p.add_run()
+            logo_run.add_picture(img_stream, width=Inches(1.5))
         except Exception:
             pass
 
+    # 3. Pie de página fijo en Word
+    footer = section.footer
+    footer_p = footer.paragraphs[0]
+    footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     text_run = footer_p.add_run("SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.\nCONTRATO N° AC 31104857")
     text_run.font.size = Pt(7)
     text_run.font.color.rgb = RGBColor(107, 114, 128)
 
-    # 3. Encabezado del documento
+    # 4. Título y fecha
     title_p = doc.add_paragraph()
     title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     title_run = title_p.add_run("INFORME INSPECCIÓN")
-    title_run.font.size = Pt(20)
+    title_run.font.size = Pt(18)
     title_run.font.bold = True
     title_run.font.color.rgb = RGBColor(30, 58, 138)
     
@@ -279,34 +303,60 @@ def generar_word_informe(df_fecha, fecha_str):
     
     doc.add_paragraph()
 
+    # 5. Tablas agrupadas por Inspector
     if not df_fecha.empty:
-        table = doc.add_table(rows=1, cols=5)
-        table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        table.style = 'Table Grid'
-        
-        hdr_cells = table.rows[0].cells
-        headers = ["Inspector", "Planta / TAG", "Actividad Realizada", "Avance", "Estado"]
-        for i, header_text in enumerate(headers):
-            hdr_cells[i].text = header_text
-            p = hdr_cells[i].paragraphs[0]
-            p.runs[0].font.bold = True
-            p.runs[0].font.size = Pt(9)
-            p.runs[0].font.color.rgb = RGBColor(255, 255, 255)
-            shd = parse_xml(r'<w:shd {} w:fill="1E3A8A"/>'.format(nsdecls('w')))
-            hdr_cells[i]._tc.get_or_add_tcPr().append(shd)
+        inspectores_grupos = list(df_fecha.groupby('inspector', sort=False))
+        total_grupos = len(inspectores_grupos)
 
-        for _, row in df_fecha.iterrows():
-            row_cells = table.add_row().cells
-            row_cells[0].text = str(row.get("inspector", "-"))
-            row_cells[1].text = f"Planta: {row.get('planta', '-')}\nTAG: {row.get('tag_equipo', '-')}"
-            row_cells[2].text = str(row.get("actividad_realizada", "-"))
-            row_cells[3].text = str(row.get("avance", "-"))
-            row_cells[4].text = str(row.get("estado_liberacion", "-"))
+        for idx, (inspector_nom, group_df) in enumerate(inspectores_grupos):
+            insp_p = doc.add_paragraph()
+            insp_run = insp_p.add_run(f"Inspector: {inspector_nom}")
+            insp_run.font.size = Pt(11)
+            insp_run.font.bold = True
+            insp_run.font.color.rgb = RGBColor(30, 58, 138)
             
-            for cell in row_cells:
-                for p in cell.paragraphs:
-                    for r in p.runs:
-                        r.font.size = Pt(8.5)
+            table = doc.add_table(rows=1, cols=5)
+            table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            table.style = 'Table Grid'
+            
+            hdr_cells = table.rows[0].cells
+            headers = ["Planta / TAG", "Actividad Realizada", "Avance", "Estado", "Observaciones"]
+            for i, header_text in enumerate(headers):
+                hdr_cells[i].text = header_text
+                p = hdr_cells[i].paragraphs[0]
+                p.runs[0].font.bold = True
+                p.runs[0].font.size = Pt(8.5)
+                p.runs[0].font.color.rgb = RGBColor(255, 255, 255)
+                shd = parse_xml(r'<w:shd {} w:fill="1E3A8A"/>'.format(nsdecls('w')))
+                hdr_cells[i]._tc.get_or_add_tcPr().append(shd)
+
+            for _, row in group_df.iterrows():
+                row_cells = table.add_row().cells
+                row_cells[0].text = f"Planta: {row.get('planta', '-')}\nTAG: {row.get('tag_equipo', '-')}"
+                row_cells[1].text = str(row.get("actividad_realizada", "-"))
+                row_cells[2].text = str(row.get("avance", "-"))
+                row_cells[3].text = str(row.get("estado_liberacion", "-"))
+                row_cells[4].text = str(row.get("observaciones", "-")) if row.get("observaciones") else "-"
+                
+                for cell in row_cells:
+                    for p in cell.paragraphs:
+                        for r in p.runs:
+                            r.font.size = Pt(8)
+
+            doc.add_paragraph()
+
+            # Franja Naranja entre distintos inspectores
+            if idx < total_grupos - 1:
+                div_table = doc.add_table(rows=1, cols=1)
+                div_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+                div_cell = div_table.rows[0].cells[0]
+                div_cell.width = Inches(6.5)
+                shd_orange = parse_xml(r'<w:shd {} w:fill="F97316"/>'.format(nsdecls('w')))
+                div_cell._tc.get_or_add_tcPr().append(shd_orange)
+                p_div = div_cell.paragraphs[0]
+                p_div.paragraph_format.space_before = Pt(2)
+                p_div.paragraph_format.space_after = Pt(2)
+                doc.add_paragraph()
 
     buffer = io.BytesIO()
     doc.save(buffer)
