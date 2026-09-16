@@ -1,8 +1,22 @@
+import io
+import requests
 import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
+
+# Librerías para generación de PDF
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+
+# Librerías para generación de Word
+from docx import Document
+from docx.shared import Inches, Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_TABLE_ALIGNMENT
 
 # =========================================================
 # CONFIGURACIÓN DE LA PÁGINA
@@ -62,8 +76,182 @@ def cargar_datos_sheets():
         st.error(f"Error al leer la hoja de Google Sheets: {e}")
         return pd.DataFrame(columns=[
             "fecha", "semana", "planta", "inspector", "tag_equipo", 
-            "actividad_realizada", "avance", "observaciones", "estado_liberacion"
+            "actividad_realizada", "observaciones", "estado_liberacion"
         ])
+
+# =========================================================
+# FUNCIÓN PARA GENERAR PDF DEL INFORME DE INSPECCIÓN
+# =========================================================
+def generar_pdf_informe(df_fecha, fecha_str):
+    """Genera un archivo PDF estructurado para la fecha seleccionada."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=30,
+        leftMargin=30,
+        topMargin=30,
+        bottomMargin=50
+    )
+    
+    styles = getSampleStyleSheet()
+    
+    title_style = ParagraphStyle(
+        'DocTitle', parent=styles['Heading1'], fontSize=20, leading=24,
+        textColor=colors.HexColor('#1E3A8A'), alignment=1, spaceAfter=10
+    )
+    subtitle_style = ParagraphStyle(
+        'DocSubTitle', parent=styles['Normal'], fontSize=12, leading=15,
+        textColor=colors.HexColor('#4B5563'), alignment=1, spaceAfter=20
+    )
+    cell_header_style = ParagraphStyle(
+        'HeaderStyle', parent=styles['Normal'], fontSize=9, leading=11,
+        textColor=colors.white, fontName='Helvetica-Bold', alignment=1
+    )
+    cell_body_style = ParagraphStyle(
+        'BodyStyle', parent=styles['Normal'], fontSize=8, leading=10,
+        textColor=colors.HexColor('#1F2937')
+    )
+
+    story = [
+        Paragraph("INFORME INSPECCIÓN", title_style),
+        Paragraph(f"<b>Fecha del Reporte:</b> {fecha_str}", subtitle_style),
+        Spacer(1, 10)
+    ]
+
+    if not df_fecha.empty:
+        table_data = [[
+            Paragraph("Inspector", cell_header_style),
+            Paragraph("Planta / Tag", cell_header_style),
+            Paragraph("Actividad Realizada", cell_header_style),
+            Paragraph("Avance", cell_header_style),
+            Paragraph("Estado", cell_header_style)
+        ]]
+        
+        for _, row in df_fecha.iterrows():
+            inspector = row.get("inspector", "-")
+            planta = row.get("planta", "-")
+            tag = row.get("tag_equipo", "-")
+            actividad = row.get("actividad_realizada", "-")
+            avance = row.get("avance", "-")
+            estado = row.get("estado_liberacion", "-")
+            
+            table_data.append([
+                Paragraph(inspector, cell_body_style),
+                Paragraph(f"<b>Planta:</b> {planta}<br/><b>TAG:</b> {tag}", cell_body_style),
+                Paragraph(actividad, cell_body_style),
+                Paragraph(avance, cell_body_style),
+                Paragraph(estado, cell_body_style)
+            ])
+            
+        t = Table(table_data, colWidths=[100, 110, 200, 50, 90])
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#D1D5DB')),
+            ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F9FAFB')]),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ('TOPPADDING', (0,0), (-1,-1), 6),
+        ]))
+        story.append(t)
+
+    story.append(Spacer(1, 30))
+
+    # Logo en la parte inferior
+    try:
+        response = requests.get(URL_LOGO_GITHUB, timeout=5)
+        if response.status_code == 200:
+            img_data = io.BytesIO(response.content)
+            logo_img = RLImage(img_data, width=120, height=50)
+            logo_img.hAlign = 'CENTER'
+            story.append(logo_img)
+    except Exception:
+        pass
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+# =========================================================
+# FUNCIÓN PARA GENERAR WORD (.DOCX) DEL INFORME
+# =========================================================
+def generar_word_informe(df_fecha, fecha_str):
+    """Genera un archivo Word (.docx) estructurado para la fecha seleccionada."""
+    doc = Document()
+    
+    # 1. TÍTULO
+    title_p = doc.add_paragraph()
+    title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title_run = title_p.add_run("INFORME INSPECCIÓN")
+    title_run.font.size = Pt(20)
+    title_run.font.bold = True
+    title_run.font.color.rgb = RGBColor(30, 58, 138) # Azul marino
+    
+    # 2. FECHA
+    date_p = doc.add_paragraph()
+    date_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    date_run = date_p.add_run(f"Fecha del Reporte: {fecha_str}")
+    date_run.font.size = Pt(12)
+    date_run.font.color.rgb = RGBColor(75, 85, 99)
+    
+    doc.add_paragraph() # Espaciador
+
+    # 3. TABLA DE REGISTROS
+    if not df_fecha.empty:
+        table = doc.add_table(rows=1, cols=5)
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        table.style = 'Table Grid'
+        
+        # Encabezados
+        hdr_cells = table.rows[0].cells
+        headers = ["Inspector", "Planta / TAG", "Actividad Realizada", "Avance", "Estado"]
+        for i, header_text in enumerate(headers):
+            hdr_cells[i].text = header_text
+            p = hdr_cells[i].paragraphs[0]
+            p.runs[0].font.bold = True
+            p.runs[0].font.size = Pt(9)
+            p.runs[0].font.color.rgb = RGBColor(255, 255, 255)
+            # Fondo azul para encabezado
+            shading = hdr_cells[i]._tc.get_or_add_tcPr()
+            shd = shading.makeelement('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}shd',
+                                     {'{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val': 'clear',
+                                      '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}color': 'auto',
+                                      '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}fill': '1E3A8A'})
+            shading.append(shd)
+
+        # Filas de datos
+        for _, row in df_fecha.iterrows():
+            row_cells = table.add_row().cells
+            row_cells[0].text = str(row.get("inspector", "-"))
+            row_cells[1].text = f"Planta: {row.get('planta', '-')}\nTAG: {row.get('tag_equipo', '-')}"
+            row_cells[2].text = str(row.get("actividad_realizada", "-"))
+            row_cells[3].text = str(row.get("avance", "-"))
+            row_cells[4].text = str(row.get("estado_liberacion", "-"))
+            
+            for cell in row_cells:
+                for p in cell.paragraphs:
+                    for r in p.runs:
+                        r.font.size = Pt(8.5)
+
+    doc.add_paragraph() # Espaciador
+
+    # 4. LOGO AL PIE
+    try:
+        response = requests.get(URL_LOGO_GITHUB, timeout=5)
+        if response.status_code == 200:
+            img_data = io.BytesIO(response.content)
+            logo_p = doc.add_paragraph()
+            logo_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            logo_run = logo_p.add_run()
+            logo_run.add_picture(img_data, width=Inches(1.8))
+    except Exception:
+        pass
+
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
 
 # =========================================================
 # LISTAS Y CONFIGURACIONES
@@ -76,7 +264,6 @@ LISTA_INSPECTORES = [
     "Inspector 5"
 ]
 
-# Lista de Plantas de Unidades de Proceso
 LISTA_PLANTAS = [
     "A0AEX", "A0ALQ", "A0BUT", "A0CCK", "A0CCR", "A0CKR", "A0HDG", "A0HDT", "A0HCK", 
     "A0ISO", "A0LAB", "A0MHC", "A0NHT", "A0SAR", "A0SHP", "A0SWS", "AACID", "AAMAR", 
@@ -88,7 +275,6 @@ LISTA_PLANTAS = [
     "ATRAG", "AURA1", "AURA2", "AURA3", "AVAC1", "AVAC2", "ACOKE"
 ]
 
-# Lista de Semanas 1 a 52
 LISTA_SEMANAS = [f"Semana {i}" for i in range(1, 53)]
 
 ESTADOS_LIBERACION = [
@@ -126,7 +312,7 @@ st.markdown("---")
 # =========================================================
 menu = st.sidebar.radio(
     "📌 Selecciona una Opción:",
-    ["📝 Registrar Actividad por Inspector", "📊 Historial en la Nube"]
+    ["📝 Registrar Actividad por Inspector", "📊 Historial e Informes"]
 )
 
 # =========================================================
@@ -138,50 +324,22 @@ if menu == "📝 Registrar Actividad por Inspector":
     with st.form("form_actividades_inspector", clear_on_submit=True):
         col1, col2 = st.columns(2)
         
-        # Calcular semana actual como valor por defecto
         semana_actual_num = datetime.now().isocalendar()[1]
         idx_semana_defecto = min(semana_actual_num - 1, 51)
         
         with col1:
-            inspector_seleccionado = st.selectbox(
-                "👷‍♂️ Seleccionar Inspector asignado:",
-                LISTA_INSPECTORES
-            )
+            inspector_seleccionado = st.selectbox("👷‍♂️ Seleccionar Inspector asignado:", LISTA_INSPECTORES)
             fecha_actividad = st.date_input("📅 Fecha de Inspección:", datetime.now())
-            semana_seleccionada = st.selectbox(
-                "🗓️ Semana Operativa:", 
-                LISTA_SEMANAS, 
-                index=idx_semana_defecto
-            )
-            planta_seleccionada = st.selectbox(
-                "🏭 Planta / Unidad:", 
-                LISTA_PLANTAS
-            )
+            semana_seleccionada = st.selectbox("🗓️ Semana Operativa:", LISTA_SEMANAS, index=idx_semana_defecto)
+            planta_seleccionada = st.selectbox("🏭 Planta / Unidad:", LISTA_PLANTAS)
 
         with col2:
             tag_equipo = st.text_input("🏷️ TAG del Equipo / Línea Piping:", placeholder="Ej: C-1302 / E-2101 / PIP-001")
-            
-            # Deslizador para Porcentaje de Avance
-            porcentaje_avance = st.slider(
-                "📊 Porcentaje de Avance de la Actividad:",
-                min_value=0,
-                max_value=100,
-                value=0,
-                step=5,
-                format="%d%%"
-            )
-            
+            porcentaje_avance = st.slider("📊 Porcentaje de Avance:", min_value=0, max_value=100, value=0, step=5, format="%d%%")
             estado_liberacion = st.selectbox("📌 Estado de la Inspección:", ESTADOS_LIBERACION)
 
-        actividad_realizada = st.text_area(
-            "🛠️ Actividades Realizadas por el Inspector:",
-            placeholder="Ej: Inspección visual de junta, verificación de Alineación/Torque..."
-        )
-
-        observaciones = st.text_area(
-            "💬 Observaciones Adicionales / Recomendaciones:",
-            placeholder="Escribe comentarios extra sobre la inspección..."
-        )
+        actividad_realizada = st.text_area("🛠️ Actividades Realizadas por el Inspector:", placeholder="Ej: Inspección visual de junta...")
+        observaciones = st.text_area("💬 Observaciones Adicionales / Recomendaciones:", placeholder="Escribe comentarios extra...")
         
         btn_guardar = st.form_submit_button("☁️ Guardar Registro en Google Sheets")
         
@@ -189,7 +347,6 @@ if menu == "📝 Registrar Actividad por Inspector":
             if tag_equipo and actividad_realizada:
                 try:
                     sheet = conectar_google_sheets()
-                    
                     todas_las_filas = sheet.get_all_values()
                     if len(todas_las_filas) == 0:
                         sheet.append_row([
@@ -208,9 +365,7 @@ if menu == "📝 Registrar Actividad por Inspector":
                         observaciones.strip(),
                         estado_liberacion
                     ]
-                    
                     sheet.append_row(nueva_fila)
-                    
                     st.success(f"✅ ¡Actividad de **{inspector_seleccionado}** (Planta: {planta_seleccionada} | TAG: {tag_equipo}) guardada con éxito!")
                 except Exception as ex:
                     st.error(f"❌ Ocurrió un error al guardar en la nube: {ex}")
@@ -218,14 +373,53 @@ if menu == "📝 Registrar Actividad por Inspector":
                 st.error("⚠️ Por favor completa los campos obligatorios: **TAG del Equipo** y **Actividades Realizadas**.")
 
 # =========================================================
-# MÓDULO 2: HISTORIAL EN LA NUBE (LECTURA Y FILTROS)
+# MÓDULO 2: HISTORIAL E INFORMES EN WORD Y PDF
 # =========================================================
-elif menu == "📊 Historial en la Nube":
-    st.subheader("🔍 Consulta e Historial de Actividades Registradas")
+elif menu == "📊 Historial e Informes":
+    st.subheader("🔍 Consulta de Historial y Generación de Informes")
     
     with st.spinner("Cargando registros desde Google Sheets..."):
         df_historial = cargar_datos_sheets()
     
+    # ---------------------------------------------------------
+    # SECCIÓN: GENERADOR DE INFORME DIARIO EN PDF Y WORD
+    # ---------------------------------------------------------
+    st.markdown("### 📄 Exportar Informe Diarios")
+    col_pdf1, col_pdf2, col_pdf3 = st.columns([2, 1.5, 1.5])
+    
+    with col_pdf1:
+        fecha_informe = st.date_input("🗓️ Selecciona la Fecha del Informe:", datetime.now())
+        fecha_informe_str = str(fecha_informe)
+    
+    df_informe = df_historial[df_historial['fecha'] == fecha_informe_str] if not df_historial.empty and 'fecha' in df_historial.columns else pd.DataFrame()
+    
+    if not df_informe.empty:
+        with col_pdf2:
+            st.write("&nbsp;") # Espaciador
+            pdf_bytes = generar_pdf_informe(df_informe, fecha_informe_str)
+            st.download_button(
+                label="📄 Descargar Informe (PDF)",
+                data=pdf_bytes,
+                file_name=f"INFORME_INSPECCION_{fecha_informe_str}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+        with col_pdf3:
+            st.write("&nbsp;") # Espaciador
+            word_bytes = generar_word_informe(df_informe, fecha_informe_str)
+            st.download_button(
+                label="📝 Descargar Informe (Word)",
+                data=word_bytes,
+                file_name=f"INFORME_INSPECCION_{fecha_informe_str}.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                use_container_width=True
+            )
+    else:
+        st.info("No hay registros guardados para esta fecha para generar informes.")
+
+    st.markdown("---")
+    st.markdown("### 📊 Tabla de Consulta e Historial Completo")
+
     if not df_historial.empty:
         col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns(5)
         
