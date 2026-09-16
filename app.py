@@ -19,18 +19,20 @@ URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/m
 SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 
 # =========================================================
-# SANITIZACIÓN AUTOMÁTICA DE LA CLAVE PRIVADA (CORRECCIÓN PEM)
+# SANITIZACIÓN DE CREDENCIALES
 # =========================================================
-if "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
-    if "private_key" in st.secrets["connections"]["gsheets"]:
-        key = st.secrets["connections"]["gsheets"]["private_key"]
-        # Convertimos los \n de texto en saltos de linea reales en memoria
-        st.secrets["connections"]["gsheets"]["private_key"] = key.replace("\\n", "\n")
+def obtener_credenciales_sanitizadas():
+    """Crea un diccionario de credenciales corregidas para evitar errores PEM."""
+    credenciales = dict(st.secrets["connections"]["gsheets"])
+    if "private_key" in credenciales:
+        credenciales["private_key"] = credenciales["private_key"].replace("\\n", "\n")
+    return credenciales
 
 # =========================================================
 # CONEXIÓN CON GOOGLE SHEETS
 # =========================================================
-conn = st.connection("gsheets", type=GSheetsConnection)
+creds = obtener_credenciales_sanitizadas()
+conn = st.connection("gsheets", type=GSheetsConnection, service_account_info=creds)
 
 def cargar_datos_sheets():
     """Lee las filas almacenadas en la Hoja de Google Sheets."""
