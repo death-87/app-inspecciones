@@ -421,6 +421,10 @@ ESTADOS_LIBERACION = [
     "En Espera de END / Pruebas"
 ]
 
+# 🟢 CORRECCIÓN: Cálculo de semana por defecto disponible de forma global
+semana_actual_num = datetime.now().isocalendar()[1]
+idx_semana_defecto = max(0, min(semana_actual_num - 1, len(LISTA_SEMANAS) - 1))
+
 # =========================================================
 # ENCABEZADO Y VISUALIZACIÓN DEL LOGO
 # =========================================================
@@ -463,9 +467,6 @@ if menu == "📝 Registrar Actividad por Inspector":
     
     with st.form("form_actividades_inspector", clear_on_submit=True):
         col1, col2 = st.columns(2)
-        
-        semana_actual_num = datetime.now().isocalendar()[1]
-        idx_semana_defecto = min(semana_actual_num - 1, 51)
         
         with col1:
             inspector_seleccionado = st.selectbox("👷‍♂️ Seleccionar Inspector asignado:", LISTA_INSPECTORES)
