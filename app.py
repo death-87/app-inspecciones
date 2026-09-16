@@ -12,8 +12,11 @@ st.set_page_config(
     layout="wide"
 )
 
+# 🔗 PEGA AQUÍ LA URL RAW DE TU LOGO DESDE GITHUB
+URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/logo.png"
+
 # 🔗 PEGA AQUÍ LA URL COMPLETA DE TU HOJA DE GOOGLE SHEETS
-URL_GOOGLE_SHEETS = "https://docs.google.com/spreadsheets/d/1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I/edit?usp=sharing"
+URL_GOOGLE_SHEETS = "https://docs.google.com/spreadsheets/d/TU_ID_DE_HOJA_AQUI/edit#gid=0"
 
 # =========================================================
 # CONEXIÓN CON GOOGLE SHEETS
@@ -23,7 +26,6 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 def cargar_datos_sheets():
     """Lee las filas almacenadas en la Hoja de Google."""
     try:
-        # ttl=0 fuerza a leer los datos actualizados de la nube sin usar caché
         return conn.read(spreadsheet=URL_GOOGLE_SHEETS, ttl=0)
     except Exception as e:
         st.error(f"Error de conexión con Google Sheets: {e}")
@@ -38,9 +40,9 @@ def cargar_datos_sheets():
 LISTA_INSPECTORES = [
     "Juan Navarrete",
     "Jorge Hernandez",
-    "Miguel Chirinos",
-    "Harold Castillo",
-    "Arlem Sarmiento"
+    "Inspector 3",
+    "Inspector 4",
+    "Inspector 5"
 ]
 
 ESTADOS_LIBERACION = [
@@ -52,11 +54,32 @@ ESTADOS_LIBERACION = [
 ]
 
 # =========================================================
-# INTERFAZ Y NAVEGACIÓN
+# MOSTRAR LOGO Y ENCABEZADO
 # =========================================================
-st.title("☁️ Control de Actividades por Inspector (Sincronizado en la Nube)")
+# Logo en la barra lateral
+try:
+    st.sidebar.image(URL_LOGO_GITHUB, use_container_width=True)
+except Exception:
+    pass
+
+# Encabezado principal con Logo al lado del título
+col_logo, col_titulo = st.columns([1, 4])
+
+with col_logo:
+    try:
+        st.image(URL_LOGO_GITHUB, width=140)
+    except Exception:
+        st.write("📂 [Logo]")
+
+with col_titulo:
+    st.title("Control de Actividades por Inspector")
+    st.markdown("##### *Sistema de Gestión QA/QC Sincronizado en la Nube*")
+
 st.markdown("---")
 
+# =========================================================
+# NAVEGACIÓN
+# =========================================================
 menu = st.sidebar.radio(
     "📌 Selecciona una Opción:",
     ["📝 Registrar Actividad por Inspector", "📊 Historial en la Nube"]
@@ -96,10 +119,8 @@ if menu == "📝 Registrar Actividad por Inspector":
         if btn_guardar:
             if tag_equipo and actividad_realizada:
                 try:
-                    # 1. Cargar el DataFrame actual de la nube
                     df_actual = cargar_datos_sheets()
                     
-                    # 2. Crear la nueva fila
                     nueva_fila = pd.DataFrame([{
                         "fecha": str(fecha_actividad),
                         "inspector": inspector_seleccionado,
@@ -109,7 +130,6 @@ if menu == "📝 Registrar Actividad por Inspector":
                         "estado_liberacion": estado_liberacion
                     }])
                     
-                    # 3. Concatenar y actualizar la hoja en Google Sheets
                     df_actualizado = pd.concat([df_actual, nueva_fila], ignore_index=True)
                     conn.update(spreadsheet=URL_GOOGLE_SHEETS, data=df_actualizado)
                     
@@ -129,7 +149,6 @@ elif menu == "📊 Historial en la Nube":
         df_historial = cargar_datos_sheets()
     
     if not df_historial.empty and "inspector" in df_historial.columns:
-        # Filtros de búsqueda
         col_filtro1, col_filtro2, col_filtro3 = st.columns(3)
         
         with col_filtro1:
@@ -146,7 +165,6 @@ elif menu == "📊 Historial en la Nube":
                 ["Todos"] + ESTADOS_LIBERACION
             )
 
-        # Aplicar filtros
         df_filtrado = df_historial.copy()
         
         if filtro_inspector != "Todos":
@@ -160,13 +178,11 @@ elif menu == "📊 Historial en la Nube":
 
         st.markdown(f"**Total de registros en la nube:** `{len(df_filtrado)}`")
         
-        # Mostrar tabla interactiva
         st.dataframe(
             df_filtrado, 
             use_container_width=True
         )
         
-        # Botón de exportación local
         csv_data = df_filtrado.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="📥 Descargar copia local a CSV",
