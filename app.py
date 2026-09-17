@@ -482,8 +482,8 @@ if personaje_bytes:
             /* 2. Posicionamiento absoluto y libre del personaje */
             .sidebar-personaje-custom {
                 position: absolute !important;
-                top: 12cm !important;   /* ⬇️ Controla qué tan ABAJO está (Aumenta o disminuye en cm / px) */
-                left: 2cm !important;   /* ➡️ Controla qué tan a la DERECHA está (Aumenta o disminuye en cm / px) */
+                top: 300cm !important;   /* ⬇️ Controla qué tan ABAJO está (Aumenta o disminuye en cm / px) */
+                left: 20cm !important;   /* ➡️ Controla qué tan a la DERECHA está (Aumenta o disminuye en cm / px) */
                 z-index: 99999 !important;
             }
 
