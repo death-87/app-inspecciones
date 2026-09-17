@@ -68,19 +68,28 @@ def obtener_bytes_personaje():
 # CONEXIÓN DIRECTA CON GOOGLE SHEETS VIA GSPREAD
 # =========================================================
 def conectar_google_sheets():
-    """Autentica y devuelve el cliente de Google Sheets."""
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    
     creds_dict = dict(st.secrets["connections"]["gsheets"])
     
-    if "private_key" in creds_dict:
-        pk = creds_dict["private_key"]
-        pk = pk.replace("\\n", "\n").strip()
-        lines = [line.strip() for line in pk.split("\n") if line.strip()]
-        creds_dict["private_key"] = "\n".join(lines) + "\n"
+    # Unimos automáticamente los pedazos de la llave privada guardados en los secrets
+    creds_dict["private_key"] = (
+        st.secrets["connections"]["gsheets"]["pk_parte1"] +
+        st.secrets["connections"]["gsheets"]["pk_parte2"] +
+        st.secrets["connections"]["gsheets"]["pk_parte3"] +
+        st.secrets["connections"]["gsheets"]["pk_parte4"] +
+        st.secrets["connections"]["gsheets"]["pk_parte5"] +
+        st.secrets["connections"]["gsheets"]["pk_parte6"] +
+        st.secrets["connections"]["gsheets"]["pk_parte7"] +
+        st.secrets["connections"]["gsheets"]["pk_parte8"] +
+        st.secrets["connections"]["gsheets"]["pk_parte9"] +
+        st.secrets["connections"]["gsheets"]["pk_parte10"] +
+        st.secrets["connections"]["gsheets"]["pk_parte11"] +
+        st.secrets["connections"]["gsheets"]["pk_parte12"] +
+        st.secrets["connections"]["gsheets"]["pk_parte13"]
+    )
 
     credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     client = gspread.authorize(credentials)
