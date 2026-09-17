@@ -1,4 +1,5 @@
 import io
+import base64
 import requests
 import streamlit as st
 import pandas as pd
@@ -468,41 +469,24 @@ menu = st.sidebar.radio(
     ]
 )
 
-# 🟢 PERSONAJE FIJO EN EL PIE DE LA SIDEBAR Y CENTRADO A 150px
+# 🟢 PERSONAJE EN BASE64 CON POSICIONAMIENTO EN CENTÍMETROS LIBRE
 personaje_bytes = obtener_bytes_personaje()
 if personaje_bytes:
+    b64_img = base64.b64encode(personaje_bytes).decode("utf-8")
     st.sidebar.markdown(
-        """
+        f"""
         <style>
-            /* 1. Definir la barra lateral como contenedor de referencia */
-            [data-testid="stSidebar"] > div:first-child {
-                position: relative !important;
-            }
-
-            /* 2. Posicionamiento absoluto y libre del personaje */
-            .sidebar-personaje-custom {
-                position: absolute !important;
-                top: 300cm !important;   /* ⬇️ Controla qué tan ABAJO está (Aumenta o disminuye en cm / px) */
-                left: 20cm !important;   /* ➡️ Controla qué tan a la DERECHA está (Aumenta o disminuye en cm / px) */
-                z-index: 99999 !important;
-            }
-
-            /* Evitar que Streamlit limite el tamaño o margen interno del contenedor */
-            .sidebar-personaje-custom div, .sidebar-personaje-custom img {
-                margin: 0 !important;
-                padding: 0 !important;
-            }
+            .personaje-flotante {{
+                margin-top: 5cm;    /* ⬇️ AJUSTE VERTICAL: Aumenta para bajarlo o disminuye para subirlo */
+                margin-left: 1.2cm; /* ➡️ AJUSTE HORIZONTAL: Aumenta para moverlo a la derecha */
+                width: 150px;       /* 📐 Ancho de la imagen fijado en 150px */
+                display: block;
+            }}
         </style>
+        <img src="data:image/png;base64,{b64_img}" class="personaje-flotante" />
         """,
-        unsafe_allow_html=True,
+        unsafe_allow_html=True
     )
-
-    with st.sidebar:
-        st.markdown(
-            '<div class="sidebar-personaje-custom">', unsafe_allow_html=True
-        )
-        st.image(personaje_bytes, width=150)
-        st.markdown("</div>", unsafe_allow_html=True)
 
 # =========================================================
 # MÓDULO 1: REGISTRO DE ACTIVIDADES (ESCRITURA)
@@ -765,7 +749,7 @@ elif menu == "📈 Reporte Planificación":
         st.info("ℹ️ Aún no hay registros de planificación guardados.")
 
 # =========================================================
-# PIE DE PÁGINA (LOGO CENTRADO AL FINAL)
+# PIE DE PÁGINA (LOGO CENTRADO AL FINAL DE LA PÁGINA)
 # =========================================================
 st.markdown("<br/><br/>", unsafe_allow_html=True)
 st.markdown("<hr style='border: 1px solid #D1D5DB;'/>", unsafe_allow_html=True)
