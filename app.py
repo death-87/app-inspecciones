@@ -74,8 +74,8 @@ def conectar_google_sheets():
     ]
     creds_dict = dict(st.secrets["connections"]["gsheets"])
     
-    # Unimos automáticamente los pedazos de la llave privada guardados en los secrets
-    creds_dict["private_key"] = (
+    # Reconstruimos la llave privada a partir de las partes guardadas
+    raw_key = (
         st.secrets["connections"]["gsheets"]["pk_parte1"] +
         st.secrets["connections"]["gsheets"]["pk_parte2"] +
         st.secrets["connections"]["gsheets"]["pk_parte3"] +
@@ -90,6 +90,11 @@ def conectar_google_sheets():
         st.secrets["connections"]["gsheets"]["pk_parte12"] +
         st.secrets["connections"]["gsheets"]["pk_parte13"]
     )
+    
+    # Limpiamos y garantizamos que los saltos de línea (\n) sean reales y sin espacios sobrantes
+    pk = raw_key.replace("\\n", "\n").strip()
+    lines = [line.strip() for line in pk.split("\n") if line.strip()]
+    creds_dict["private_key"] = "\n".join(lines) + "\n"
 
     credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     client = gspread.authorize(credentials)
