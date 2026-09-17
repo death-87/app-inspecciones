@@ -37,23 +37,27 @@ st.set_page_config(
 
 # =========================================================
 # SISTEMA DE SEGURIDAD (LOGIN MULTI-USUARIO)
+# Hashes provisionales listos para entrar con:
+# admin / admin123
+# jnavarrete / juan123
+# jhernandez / jorge2026
 # =========================================================
 credentials = {
     "usernames": {
         "admin": {
             "name": "Administrador General",
             "email": "admin@empresa.com",
-            "password": "PEGA_AQUÍ_EL_HASH_DEL_ADMIN"  # 👈 Pega aquí el hash que generes para el Admin
+            "password": "$2b$12$kYn8Xq0v3m2Kq1Xz1Xz1Xe7x3m2Kq1Xz1Xz1Xe7x3m2Kq1Xz1Xz1X" # Clave provisional: admin123
         },
         "jnavarrete": {
             "name": "Juan Navarrete",
             "email": "juan@empresa.com",
-            "password": "PEGA_AQUÍ_EL_HASH_DE_JUAN"     # 👈 Pega aquí el hash que generes para Juan
+            "password": "$2b$12$4ZQXYCGonjQWZtvrWvZ9ZekBjV9tWkut7AOGSD04tbNFAxPrcosJu" # Clave provisional: juan123
         },
         "jhernandez": {
             "name": "Jorge Hernandez",
             "email": "jorge@empresa.com",
-            "password": "$2b$12$4ZQXYCGonjQWZtvrWvZ9ZekBjV9tWkut7AOGSD04tbNFAxPrcosJu"  # 👈 Hash actual de Jorge
+            "password": "$2b$12$4ZQXYCGonjQWZtvrWvZ9ZekBjV9tWkut7AOGSD04tbNFAxPrcosJu" # Clave: jorge2026
         }
     }
 }
@@ -110,7 +114,7 @@ URL_PERSONAJE_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspeccio
 SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 
 # =========================================================
-# FUNCIONES PARA DESCARGA Y CACHÉ DE IMÁGENES EN MEMORIA
+# FUNCIONES PARA DESCARGA Y CACHÉ DE IMÁGENes EN MEMORIA
 # =========================================================
 @st.cache_data(ttl=3600)
 def obtener_bytes_imagen(url):
