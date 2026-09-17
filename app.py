@@ -46,8 +46,8 @@ SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 # =========================================================
 USUARIOS_SISTEMA = {
     "invitado": {"password": "123", "rol": "invitado", "nombre": "Visitante / Solo Lectura"},
-    "jhernandez": {"password": "jorge2026", "rol": "operador", "nombre": "jhernandez (Agregar Datos)"},
-    "admin": {"password": "Mechanix123", "rol": "admin", "jnavarrete": "Administrador General"}
+    "inspector": {"password": "enap2026", "rol": "operador", "nombre": "Inspector (Agregar Datos)"},
+    "admin": {"password": "adminsecure2026", "rol": "admin", "nombre": "Administrador General"}
 }
 
 if "autenticado" not in st.session_state:
@@ -460,58 +460,12 @@ semana_actual_num = datetime.now().isocalendar()[1]
 idx_semana_defecto = max(0, min(semana_actual_num - 1, len(LISTA_SEMANAS) - 1))
 
 # =========================================================
-# BARRA LATERAL (LOGIN Y CONTROL DE ACCESO)
+# BARRA LATERAL (SOLO LOGO Y NAVEGACIÓN)
 # =========================================================
 logo_bytes_sidebar = obtener_bytes_logo()
 if logo_bytes_sidebar:
     st.sidebar.image(logo_bytes_sidebar, use_container_width=True)
 
-st.sidebar.markdown("### 🔐 Control de Acceso")
-
-if not st.session_state.autenticado:
-    with st.sidebar.form("form_login"):
-        user_input = st.text_input("Usuario:")
-        pass_input = st.text_input("Contraseña:", type="password")
-        btn_login = st.form_submit_button("🔑 Iniciar Sesión")
-        
-        if btn_login:
-            if user_input in USUARIOS_SISTEMA and USUARIOS_SISTEMA[user_input]["password"] == pass_input:
-                st.session_state.autenticado = True
-                st.session_state.usuario_actual = user_input
-                st.session_state.rol_actual = USUARIOS_SISTEMA[user_input]["rol"]
-                st.session_state.nombre_usuario = USUARIOS_SISTEMA[user_input]["nombre"]
-                st.rerun()
-            else:
-                st.sidebar.error("❌ Usuario o contraseña incorrectos")
-    
-    st.sidebar.info("ℹ️ Entrando como **Visitante** por defecto (Solo Lectura).")
-else:
-    st.sidebar.success(f"👤 Conectado:\n**{st.session_state.nombre_usuario}**")
-    if st.sidebar.button("🚪 Cerrar Sesión"):
-        st.session_state.autenticado = False
-        st.session_state.usuario_actual = None
-        st.session_state.rol_actual = "invitado"
-        st.session_state.nombre_usuario = "Visitante"
-        st.rerun()
-
-st.sidebar.markdown("---")
-
-# =========================================================
-# ENCABEZADO PRINCIPAL CON FRANJA Y ESTILOS
-# =========================================================
-st.markdown("<h1 style='color: #619b40; margin-bottom: 0px;'>Sistema de Gestión de Activos Físicos - QA/QC</h1>", unsafe_allow_html=True)
-st.markdown("<h4 style='color: #F97316; margin-top: 5px;'><i>Control Operativo de Inspectores e Histórico de Informes</i></h4>", unsafe_allow_html=True)
-
-# 📸 Carga segura de la Franja Decorativa Superior
-franja_bytes = obtener_bytes_franja()
-if franja_bytes:
-    st.image(franja_bytes, use_container_width=True)
-else:
-    st.markdown("<hr style='border: 2px solid #619b40;'/>", unsafe_allow_html=True)
-
-# =========================================================
-# MENÚ Y NAVEGACIÓN (SIDEBAR)
-# =========================================================
 menu = st.sidebar.radio(
     "📌 Selecciona una Opción:",
     [
@@ -543,13 +497,58 @@ if personaje_bytes:
 rol_usuario = st.session_state.rol_actual
 
 # =========================================================
+# ENCABEZADO PRINCIPAL Y PERFIL EN ESQUINA SUPERIOR DERECHA
+# =========================================================
+col_title, col_profile = st.columns([3, 1.2])
+
+with col_title:
+    st.markdown("<h1 style='color: #619b40; margin-bottom: 0px;'>Sistema de Gestión de Activos Físicos - QA/QC</h1>", unsafe_allow_html=True)
+    st.markdown("<h4 style='color: #F97316; margin-top: 5px;'><i>Control Operativo de Inspectores e Histórico de Informes</i></h4>", unsafe_allow_html=True)
+
+with col_profile:
+    # Contenedor discreto en la esquina superior derecha
+    with st.popover(f"👤 {st.session_state.nombre_usuario}"):
+        if not st.session_state.autenticado:
+            st.markdown("##### 🔐 Iniciar Sesión")
+            with st.form("form_login_popover"):
+                user_input = st.text_input("Usuario:")
+                pass_input = st.text_input("Contraseña:", type="password")
+                btn_login = st.form_submit_button("Entrar", use_container_width=True)
+                
+                if btn_login:
+                    if user_input in USUARIOS_SISTEMA and USUARIOS_SISTEMA[user_input]["password"] == pass_input:
+                        st.session_state.autenticado = True
+                        st.session_state.usuario_actual = user_input
+                        st.session_state.rol_actual = USUARIOS_SISTEMA[user_input]["rol"]
+                        st.session_state.nombre_usuario = USUARIOS_SISTEMA[user_input]["nombre"]
+                        st.rerun()
+                    else:
+                        st.error("❌ Credenciales incorrectas")
+        else:
+            st.markdown(f"**Conectado como:**\n{st.session_state.nombre_usuario}")
+            st.markdown("---")
+            if st.button("🚪 Cerrar Sesión", use_container_width=True):
+                st.session_state.autenticado = False
+                st.session_state.usuario_actual = None
+                st.session_state.rol_actual = "invitado"
+                st.session_state.nombre_usuario = "Visitante"
+                st.rerun()
+
+# 📸 Carga segura de la Franja Decorativa Superior
+franja_bytes = obtener_bytes_franja()
+if franja_bytes:
+    st.image(franja_bytes, use_container_width=True)
+else:
+    st.markdown("<hr style='border: 2px solid #619b40;'/>", unsafe_allow_html=True)
+
+# =========================================================
 # MÓDULO 1: REGISTRO DE ACTIVIDADES (ESCRITURA)
 # =========================================================
 if menu == "📝 Registrar Actividad por Inspector":
     st.subheader("📋 Formulario de Ingreso de Actividades")
     
     if rol_usuario == "invitado":
-        st.warning("⚠️ Tu cuenta actual es de **Visitante (Solo Lectura)**. No tienes permisos para registrar actividades. Por favor inicia sesión con un usuario autorizado en la barra lateral.")
+        st.warning("⚠️ Tu cuenta actual es de **Visitante (Solo Lectura)**. Haz clic en tu perfil (esquina superior derecha) para iniciar sesión con una cuenta autorizada.")
     
     with st.form("form_actividades_inspector", clear_on_submit=True):
         col1, col2 = st.columns(2)
