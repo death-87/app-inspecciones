@@ -468,28 +468,34 @@ menu = st.sidebar.radio(
     ]
 )
 
-# 🟢 PERSONAJE FIJO EN EL PIE DE LA SIDEBAR (STICKY FOOTER + ANCHO 150px)
+# 🟢 PERSONAJE FIJO EN EL PIE DE LA SIDEBAR Y CENTRADO A 150px
 personaje_bytes = obtener_bytes_personaje()
 if personaje_bytes:
     st.sidebar.markdown(
         """
         <style>
-            [data-testid="stSidebar"] {
+            /* Convertir contenedor interno de sidebar en flexbox vertical */
+            [data-testid="stSidebarUserContent"] {
                 display: flex;
                 flex-direction: column;
+                height: 100%;
             }
-            .sidebar-sticky-footer {
-                position: fixed;
-                bottom: 20px;
-                left: 20px;
-                z-index: 999;
+            /* Empujar el div contenedor del personaje al fondo y centrarlo */
+            .sidebar-personaje-container {
+                margin-top: auto;
+                padding-top: 20px;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                width: 100%;
             }
         </style>
         """,
         unsafe_allow_html=True
     )
+    
     with st.sidebar:
-        st.markdown('<div class="sidebar-sticky-footer">', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-personaje-container">', unsafe_allow_html=True)
         st.image(personaje_bytes, width=150)
         st.markdown('</div>', unsafe_allow_html=True)
 
