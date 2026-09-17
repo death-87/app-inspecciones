@@ -62,23 +62,21 @@ with st.expander("🛠️ Admin: Generador de Contraseñas Seguras (Desplegar)")
 # Reemplaza los "hash_generado_aqui..." por los códigos que te dio la herramienta de arriba.
 credentials = {
     "usernames": {
-        "juan_navarrete": {
-            "name": "Jnavarrete",
-            "email": "",
-            "password": "hash_generado_aqui_para_juan" # REEMPLAZAR ESTO
-        },
-        "jorge_hernandez": {
-            "name": "Jhernandez",
-            "email": "",
-            "password": "$2b$12$9zfmRJhEhJBrywzW1jjEKuBhYEnPC9LQDKkCkDXhmLw9aJ9jAvO36" # REEMPLAZAR ESTO
-        },
-        "admin": {
-            "name": "Administrador Principal",
-            "email": "",
-            "password": "hash_generado_aqui_para_admin" # REEMPLAZAR ESTO
+        "jhernandez": {
+            "name": "Jorge Hernandez",
+            "email": "jorge@empresa.com",
+            "password": "$2b$12$4ZQXYCGonjQWZtvrWvZ9ZekBjV9tWkut7AOGSD04tbNFAxPrcosJu" 
         }
     }
 }
+
+# Configuración del motor de autenticación
+authenticator = stauth.Authenticate(
+    credentials,
+    "cookie_inspecciones_qaqc", # Nombre interno de la sesión
+    "firma_super_secreta_123",  # Clave de seguridad interna
+    30                          # Días que dura la sesión
+)
 
 # Configuración del motor de autenticación
 authenticator = stauth.Authenticate(
