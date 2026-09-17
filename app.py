@@ -8,6 +8,7 @@ import plotly.express as px
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 import streamlit_authenticator as stauth
+import bcrypt
 
 # Librerías para generación de PDF
 from reportlab.lib.pagesizes import letter
@@ -36,30 +37,23 @@ st.set_page_config(
 
 # =========================================================
 # 🛠️ HERRAMIENTA TEMPORAL PARA ENCRIPTAR CONTRASEÑAS
-# (Borra o comenta este bloque (con #) cuando ya tengas tus usuarios listos)
-# =========================================================
-# =========================================================
-# 🛠️ HERRAMIENTA TEMPORAL PARA ENCRIPTAR CONTRASEÑAS
-# (Borra o comenta este bloque cuando ya tengas tus usuarios)
+# (Puedes borrar esto después cuando ya tengas todos tus usuarios)
 # =========================================================
 with st.expander("🛠️ Admin: Generador de Contraseñas Seguras (Desplegar)"):
-    st.info("Escribe la contraseña que quieres asignarle a un usuario. La herramienta te dará el código encriptado (Hash). Copia ese hash y pégalo abajo en la lista de 'credentials'.")
+    st.info("Escribe la contraseña que quieres asignarle a un usuario. La herramienta te dará el código encriptado (Hash).")
     clave_nueva = st.text_input("Contraseña normal (Ej: chile2026):")
     
     if clave_nueva:
-        import bcrypt
         # Generar hash seguro de la contraseña usando bcrypt
         salt = bcrypt.gensalt()
         hash_generado = bcrypt.hashpw(clave_nueva.encode('utf-8'), salt).decode('utf-8')
         
         st.code(hash_generado)
-        st.warning("☝️ Copia el código de arriba y pégalo en el bloque de 'credentials' en la línea que dice 'password'.")
+        st.warning("☝️ Copia el código de arriba y pégalo en el bloque de 'credentials'.")
 
 # =========================================================
 # SISTEMA DE SEGURIDAD (LOGIN MULTI-USUARIO)
 # =========================================================
-# Aquí defines a las personas autorizadas para entrar.
-# Reemplaza los "hash_generado_aqui..." por los códigos que te dio la herramienta de arriba.
 credentials = {
     "usernames": {
         "jhernandez": {
@@ -69,14 +63,6 @@ credentials = {
         }
     }
 }
-
-# Configuración del motor de autenticación
-authenticator = stauth.Authenticate(
-    credentials,
-    "cookie_inspecciones_qaqc", # Nombre interno de la sesión
-    "firma_super_secreta_123",  # Clave de seguridad interna
-    30                          # Días que dura la sesión
-)
 
 # Configuración del motor de autenticación
 authenticator = stauth.Authenticate(
