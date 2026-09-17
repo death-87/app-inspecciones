@@ -451,7 +451,7 @@ if logo_bytes_sidebar:
 st.markdown("<h1 style='color: #619b40; margin-bottom: 0px;'>Sistema de Gestión de Activos Físicos - QA/QC</h1>", unsafe_allow_html=True)
 st.markdown("<h4 style='color: #F97316; margin-top: 5px;'><i>Control Operativo de Inspectores e Histórico de Informes</i></h4>", unsafe_allow_html=True)
 
-# 📸 Carga segura de la Franja Decorativa
+# 📸 Carga segura de la Franja Decorativa Superior
 franja_bytes = obtener_bytes_franja()
 if franja_bytes:
     st.image(franja_bytes, use_container_width=True)
@@ -798,14 +798,45 @@ elif menu == "📈 Reporte Planificación":
         st.info("ℹ️ Aún no hay registros de planificación guardados.")
 
 # =========================================================
-# PIE DE PÁGINA (LOGO CENTRADO AL FINAL DE LA PÁGINA)
+# PIE DE PÁGINA (LOGO Y FRANJA COMPLETA EN EL SECTOR INFERIOR)
 # =========================================================
 st.markdown("<br/><br/>", unsafe_allow_html=True)
-st.markdown("<hr style='border: 1px solid #D1D5DB;'/>", unsafe_allow_html=True)
 
+# Logo centrado arriba de la franja final
 col_foot1, col_foot2, col_foot3 = st.columns([2, 1, 2])
-
 with col_foot2:
     logo_footer_bytes = obtener_bytes_logo()
     if logo_footer_bytes:
         st.image(logo_footer_bytes, width=150)
+
+# 📸 FRANJA INFERIOR CUBRIENDO EL 100% DEL ANCHO DE LA PÁGINA
+franja_footer_bytes = obtener_bytes_franja()
+if franja_footer_bytes:
+    b64_franja = base64.b64encode(franja_footer_bytes).decode("utf-8")
+    st.markdown(
+        f"""
+        <style>
+            .franja-footer-full {{
+                width: 100vw;
+                position: relative;
+                left: 50%;
+                right: 50%;
+                margin-left: -50vw;
+                margin-right: -50vw;
+                margin-top: 20px;
+                margin-bottom: -50px;
+                display: block;
+            }}
+            .franja-footer-full img {{
+                width: 100%;
+                height: 12px;
+                object-fit: cover;
+                display: block;
+            }}
+        </style>
+        <div class="franja-footer-full">
+            <img src="data:image/png;base64,{b64_franja}" />
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
