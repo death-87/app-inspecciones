@@ -63,15 +63,18 @@ with st.expander("🛠️ Admin: Generador de Contraseñas Seguras (Desplegar)")
 credentials = {
     "usernames": {
         "juan_navarrete": {
-            "name": "Juan Navarrete",
+            "name": "Jnavarrete",
+            "email": "",
             "password": "hash_generado_aqui_para_juan" # REEMPLAZAR ESTO
         },
         "jorge_hernandez": {
-            "name": "JHernandez",
+            "name": "Jhernandez",
+            "email": "",
             "password": "$2b$12$4ZQXYCGonjQWZtvrWvZ9ZekBjV9tWkut7AOGSD04tbNFAxPrcosJu" # REEMPLAZAR ESTO
         },
         "admin": {
             "name": "Administrador Principal",
+            "email": "",
             "password": "hash_generado_aqui_para_admin" # REEMPLAZAR ESTO
         }
     }
