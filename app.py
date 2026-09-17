@@ -26,13 +26,14 @@ from docx.oxml.ns import nsdecls
 # CONFIGURACIÓN DE LA PÁGINA
 # =========================================================
 st.set_page_config(
-    page_title="Gestión de Inspectores en la Nube",
+    page_title="Sistema de Gestión de Activos Físicos",
     page_icon="☁️",
     layout="wide"
 )
 
-# 🔗 URL RAW DE TU LOGO EN GITHUB
+# 🔗 URLs RAW DE LOGO Y FRANJA EN GITHUB
 URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/logo.png"
+URL_FRANJA_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/franja.png"
 
 # 🆔 ID DE TU HOJA DE GOOGLE SHEETS
 SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
@@ -426,26 +427,16 @@ semana_actual_num = datetime.now().isocalendar()[1]
 idx_semana_defecto = max(0, min(semana_actual_num - 1, len(LISTA_SEMANAS) - 1))
 
 # =========================================================
-# ENCABEZADO Y VISUALIZACIÓN DEL LOGO
+# ENCABEZADO PRINCIPAL Y FRANJA DECORATIVA
 # =========================================================
+st.title("Sistema de Gestión de Activos Físicos - QA/QC")
+st.markdown("##### *Control Operativo de Inspectores e Histórico de Informes*")
+
+# 📸 Franja horizontal justo debajo del subtítulo
 try:
-    st.sidebar.image(URL_LOGO_GITHUB, use_container_width=True)
+    st.image(URL_FRANJA_GITHUB, use_container_width=True)
 except Exception:
-    pass
-
-col_logo, col_titulo = st.columns([1, 4])
-
-with col_logo:
-    try:
-        st.image(URL_LOGO_GITHUB, width=140)
-    except Exception:
-        st.write("📂 [Logo]")
-
-with col_titulo:
-    st.title("Sistema de Gestión de Activos Físicos - QA/QC")
-    st.markdown("##### *Control Operativo de Inspectores e Histórico de Informes*")
-
-st.markdown("---")
+    st.markdown("---")
 
 # =========================================================
 # MENÚ Y NAVEGACIÓN
@@ -718,3 +709,17 @@ elif menu == "📈 Reporte Planificación":
         )
     else:
         st.info("ℹ️ Aún no hay registros de planificación guardados.")
+
+# =========================================================
+# PIE DE PÁGINA (LOGO INFERIOR)
+# =========================================================
+st.markdown("<br/><br/>", unsafe_allow_html=True)
+st.markdown("---")
+
+col_foot1, col_foot2, col_foot3 = st.columns([2, 1, 2])
+
+with col_foot2:
+    try:
+        st.image(URL_LOGO_GITHUB, width=150)
+    except Exception:
+        pass
