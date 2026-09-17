@@ -809,32 +809,35 @@ with col_foot2:
     if logo_footer_bytes:
         st.image(logo_footer_bytes, width=150)
 
-# 📸 FRANJA INFERIOR CUBRIENDO EL 100% DEL ANCHO DE LA PÁGINA
+# 📸 FRANJA INFERIOR FORZADA AL 100% DEL ANCHO SIN RECORTES DE STREAMLIT
 franja_footer_bytes = obtener_bytes_franja()
 if franja_footer_bytes:
     b64_franja = base64.b64encode(franja_footer_bytes).decode("utf-8")
     st.markdown(
         f"""
         <style>
-            .franja-footer-full {{
-                width: 100vw;
-                position: relative;
-                left: 50%;
-                right: 50%;
-                margin-left: -50vw;
-                margin-right: -50vw;
-                margin-top: 20px;
-                margin-bottom: -50px;
-                display: block;
+            /* Anular restricciones del contenedor interno de Streamlit */
+            .stApp > header + div, [data-testid="stAppViewMain"] {{
+                overflow-x: hidden !important;
             }}
-            .franja-footer-full img {{
-                width: 100%;
-                height: 12px;
-                object-fit: cover;
-                display: block;
+            .franja-footer-container {{
+                position: relative;
+                width: 100vw !important;
+                left: 50% !important;
+                transform: translateX(-50%) !important;
+                margin-top: 25px !important;
+                padding: 0 !important;
+                overflow: hidden !important;
+                line-height: 0 !important;
+            }}
+            .franja-footer-container img {{
+                width: 100% !important;
+                height: 14px !important;
+                object-fit: cover !important;
+                display: block !important;
             }}
         </style>
-        <div class="franja-footer-full">
+        <div class="franja-footer-container">
             <img src="data:image/png;base64,{b64_franja}" />
         </div>
         """,
