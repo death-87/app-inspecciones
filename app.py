@@ -39,18 +39,24 @@ URL_FRANJA_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones
 SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 
 # =========================================================
-# DESCARGA Y CACHÉ DEL LOGO EN MEMORIA
+# FUNCIONES PARA DESCARGA Y CACHÉ DE IMÁGENES EN MEMORIA
 # =========================================================
 @st.cache_data(ttl=3600)
-def obtener_bytes_logo():
-    """Descarga el logo una sola vez y lo mantiene en caché."""
+def obtener_bytes_imagen(url):
+    """Descarga una imagen de internet una sola vez y la mantiene en caché."""
     try:
-        response = requests.get(URL_LOGO_GITHUB, timeout=5)
+        response = requests.get(url, timeout=5)
         if response.status_code == 200:
             return response.content
     except Exception:
         pass
     return None
+
+def obtener_bytes_logo():
+    return obtener_bytes_imagen(URL_LOGO_GITHUB)
+
+def obtener_bytes_franja():
+    return obtener_bytes_imagen(URL_FRANJA_GITHUB)
 
 # =========================================================
 # CONEXIÓN DIRECTA CON GOOGLE SHEETS VIA GSPREAD
@@ -427,16 +433,24 @@ semana_actual_num = datetime.now().isocalendar()[1]
 idx_semana_defecto = max(0, min(semana_actual_num - 1, len(LISTA_SEMANAS) - 1))
 
 # =========================================================
-# ENCABEZADO PRINCIPAL Y FRANJA DECORATIVA
+# BARRA LATERAL (SIDEBAR CON LOGO DE REGRESO)
 # =========================================================
-st.title("Sistema de Gestión de Activos Físicos - QA/QC")
-st.markdown("##### *Control Operativo de Inspectores e Histórico de Informes*")
+logo_bytes_sidebar = obtener_bytes_logo()
+if logo_bytes_sidebar:
+    st.sidebar.image(logo_bytes_sidebar, use_container_width=True)
 
-# 📸 Franja horizontal justo debajo del subtítulo
-try:
-    st.image(URL_FRANJA_GITHUB, use_container_width=True)
-except Exception:
-    st.markdown("---")
+# =========================================================
+# ENCABEZADO PRINCIPAL CON FRANJA Y ESTILOS
+# =========================================================
+st.markdown("<h1 style='color: #1E3A8A; margin-bottom: 0px;'>Sistema de Gestión de Activos Físicos - QA/QC</h1>", unsafe_allow_html=True)
+st.markdown("<h4 style='color: #619b40; margin-top: 5px;'><i>Control Operativo de Inspectores e Histórico de Informes</i></h4>", unsafe_allow_html=True)
+
+# 📸 Carga segura de la Franja Decorativa
+franja_bytes = obtener_bytes_franja()
+if franja_bytes:
+    st.image(franja_bytes, use_container_width=True)
+else:
+    st.markdown("<hr style='border: 2px solid #619b40;'/>", unsafe_allow_html=True)
 
 # =========================================================
 # MENÚ Y NAVEGACIÓN
@@ -711,15 +725,14 @@ elif menu == "📈 Reporte Planificación":
         st.info("ℹ️ Aún no hay registros de planificación guardados.")
 
 # =========================================================
-# PIE DE PÁGINA (LOGO INFERIOR)
+# PIE DE PÁGINA (LOGO CENTRADO AL FINAL)
 # =========================================================
 st.markdown("<br/><br/>", unsafe_allow_html=True)
-st.markdown("---")
+st.markdown("<hr style='border: 1px solid #D1D5DB;'/>", unsafe_allow_html=True)
 
 col_foot1, col_foot2, col_foot3 = st.columns([2, 1, 2])
 
 with col_foot2:
-    try:
-        st.image(URL_LOGO_GITHUB, width=150)
-    except Exception:
-        pass
+    logo_footer_bytes = obtener_bytes_logo()
+    if logo_footer_bytes:
+        st.image(logo_footer_bytes, width=150)
