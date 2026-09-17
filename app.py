@@ -38,13 +38,22 @@ st.set_page_config(
 # 🛠️ HERRAMIENTA TEMPORAL PARA ENCRIPTAR CONTRASEÑAS
 # (Borra o comenta este bloque (con #) cuando ya tengas tus usuarios listos)
 # =========================================================
+# =========================================================
+# 🛠️ HERRAMIENTA TEMPORAL PARA ENCRIPTAR CONTRASEÑAS
+# (Borra o comenta este bloque cuando ya tengas tus usuarios)
+# =========================================================
 with st.expander("🛠️ Admin: Generador de Contraseñas Seguras (Desplegar)"):
     st.info("Escribe la contraseña que quieres asignarle a un usuario. La herramienta te dará el código encriptado (Hash). Copia ese hash y pégalo abajo en la lista de 'credentials'.")
     clave_nueva = st.text_input("Contraseña normal (Ej: chile2026):")
+    
     if clave_nueva:
-        hash_generado = stauth.Hasher([clave_nueva]).generate()[0]
+        import bcrypt
+        # Generar hash seguro de la contraseña usando bcrypt
+        salt = bcrypt.gensalt()
+        hash_generado = bcrypt.hashpw(clave_nueva.encode('utf-8'), salt).decode('utf-8')
+        
         st.code(hash_generado)
-        st.warning("☝️ Copia el código de arriba y reemplázalo en el diccionario de abajo.")
+        st.warning("☝️ Copia el código de arriba y pégalo en el bloque de 'credentials' en la línea que dice 'password'.")
 
 # =========================================================
 # SISTEMA DE SEGURIDAD (LOGIN MULTI-USUARIO)
