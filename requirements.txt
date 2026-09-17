@@ -5,3 +5,4 @@ google-auth
 reportlab
 python-docx
 requests
+plotly
