@@ -33,6 +33,43 @@ st.set_page_config(
     layout="wide"
 )
 
+# =========================================================
+# SISTEMA DE SEGURIDAD (LOGIN POR CONTRASEÑA)
+# =========================================================
+def check_password():
+    """Devuelve True si el usuario ingresó la contraseña correcta."""
+    def password_entered():
+        # Comprueba si la contraseña ingresada coincide con la de los st.secrets
+        if st.session_state["password"] == st.secrets["password"]:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # Por seguridad, borra la contraseña de la memoria
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        # Primera vez que entra: Muestra el campo de texto
+        st.markdown("<h2 style='text-align: center; color: #619b40;'>🔒 Acceso Restringido</h2>", unsafe_allow_html=True)
+        st.text_input("Ingresa la contraseña para acceder al sistema:", type="password", on_change=password_entered, key="password")
+        return False
+    elif not st.session_state["password_correct"]:
+        # Contraseña incorrecta: Muestra el campo de texto y un error
+        st.markdown("<h2 style='text-align: center; color: #619b40;'>🔒 Acceso Restringido</h2>", unsafe_allow_html=True)
+        st.text_input("Ingresa la contraseña para acceder al sistema:", type="password", on_change=password_entered, key="password")
+        st.error("❌ Contraseña incorrecta. Inténtalo de nuevo.")
+        return False
+    else:
+        # Contraseña correcta: Permite el paso
+        return True
+
+# 🛑 DETIENE LA EJECUCIÓN SI LA CONTRASEÑA NO ES CORRECTA 🛑
+if not check_password():
+    st.stop()
+
+
+# =========================================================
+# (A PARTIR DE AQUÍ, SOLO SE EJECUTA SI LA CONTRASEÑA FUE CORRECTA)
+# =========================================================
+
 # 🔗 URLs RAW DE LOGO, FRANJA Y PERSONAJE EN GITHUB
 URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/logo.png"
 URL_FRANJA_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/franja.png"
