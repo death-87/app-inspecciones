@@ -45,8 +45,8 @@ SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 # GESTIÓN DE AUTENTICACIÓN Y ROLES DE USUARIO
 # =========================================================
 USUARIOS_SISTEMA = {
-    "invitado": {"password": "123", "rol": "invitado", "visitante": "Visitante / Solo Lectura"},
-    "inspector": {"password": "jorge2026", "rol": "jhernandez", "jhernandez": "Inspector (Agregar Datos)"},
+    "invitado": {"password": "123", "rol": "invitado", "nombre": "Visitante / Solo Lectura"},
+    "jhernandez": {"password": "jorge2026", "rol": "operador", "nombre": "jhernandez (Agregar Datos)"},
     "admin": {"password": "Mechanix123", "rol": "admin", "jnavarrete": "Administrador General"}
 }
 
@@ -460,38 +460,39 @@ semana_actual_num = datetime.now().isocalendar()[1]
 idx_semana_defecto = max(0, min(semana_actual_num - 1, len(LISTA_SEMANAS) - 1))
 
 # =========================================================
-# BARRA LATERAL (LOGO Y LOGIN DISCRETO)
+# BARRA LATERAL (LOGIN Y CONTROL DE ACCESO)
 # =========================================================
 logo_bytes_sidebar = obtener_bytes_logo()
 if logo_bytes_sidebar:
     st.sidebar.image(logo_bytes_sidebar, use_container_width=True)
 
-# 🔒 ACCESO DISCRETO MEDIANTE UN MENÚ DESPLEGABLE (EXPANDER)
-with st.sidebar.expander("👤 Sesión y Acceso", expanded=not st.session_state.autenticado):
-    if not st.session_state.autenticado:
-        with st.form("form_login_discreto"):
-            user_input = st.text_input("Usuario:")
-            pass_input = st.text_input("Contraseña:", type="password")
-            btn_login = st.form_submit_button("🔑 Entrar")
-            
-            if btn_login:
-                if user_input in USUARIOS_SISTEMA and USUARIOS_SISTEMA[user_input]["password"] == pass_input:
-                    st.session_state.autenticado = True
-                    st.session_state.usuario_actual = user_input
-                    st.session_state.rol_actual = USUARIOS_SISTEMA[user_input]["rol"]
-                    st.session_state.nombre_usuario = USUARIOS_SISTEMA[user_input]["nombre"]
-                    st.rerun()
-                else:
-                    st.error("❌ Credenciales inválidas")
-        st.caption("Modo actual: Visitante (Lectura)")
-    else:
-        st.success(f"Conectado como:\n**{st.session_state.nombre_usuario}**")
-        if st.button("🚪 Cerrar Sesión", use_container_width=True):
-            st.session_state.autenticado = False
-            st.session_state.usuario_actual = None
-            st.session_state.rol_actual = "invitado"
-            st.session_state.nombre_usuario = "Visitante"
-            st.rerun()
+st.sidebar.markdown("### 🔐 Control de Acceso")
+
+if not st.session_state.autenticado:
+    with st.sidebar.form("form_login"):
+        user_input = st.text_input("Usuario:")
+        pass_input = st.text_input("Contraseña:", type="password")
+        btn_login = st.form_submit_button("🔑 Iniciar Sesión")
+        
+        if btn_login:
+            if user_input in USUARIOS_SISTEMA and USUARIOS_SISTEMA[user_input]["password"] == pass_input:
+                st.session_state.autenticado = True
+                st.session_state.usuario_actual = user_input
+                st.session_state.rol_actual = USUARIOS_SISTEMA[user_input]["rol"]
+                st.session_state.nombre_usuario = USUARIOS_SISTEMA[user_input]["nombre"]
+                st.rerun()
+            else:
+                st.sidebar.error("❌ Usuario o contraseña incorrectos")
+    
+    st.sidebar.info("ℹ️ Entrando como **Visitante** por defecto (Solo Lectura).")
+else:
+    st.sidebar.success(f"👤 Conectado:\n**{st.session_state.nombre_usuario}**")
+    if st.sidebar.button("🚪 Cerrar Sesión"):
+        st.session_state.autenticado = False
+        st.session_state.usuario_actual = None
+        st.session_state.rol_actual = "invitado"
+        st.session_state.nombre_usuario = "Visitante"
+        st.rerun()
 
 st.sidebar.markdown("---")
 
@@ -548,7 +549,7 @@ if menu == "📝 Registrar Actividad por Inspector":
     st.subheader("📋 Formulario de Ingreso de Actividades")
     
     if rol_usuario == "invitado":
-        st.warning("⚠️ Tu cuenta actual es de **Visitante (Solo Lectura)**. Despliega la opción **👤 Sesión y Acceso** arriba en la barra lateral para iniciar sesión con una cuenta autorizada.")
+        st.warning("⚠️ Tu cuenta actual es de **Visitante (Solo Lectura)**. No tienes permisos para registrar actividades. Por favor inicia sesión con un usuario autorizado en la barra lateral.")
     
     with st.form("form_actividades_inspector", clear_on_submit=True):
         col1, col2 = st.columns(2)
