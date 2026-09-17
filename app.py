@@ -34,36 +34,49 @@ st.set_page_config(
 )
 
 # =========================================================
-# SISTEMA DE SEGURIDAD SIMPLE (CONTRASEÑA ÚNICA DE ADMIN)
+# SISTEMA DE SEGURIDAD MULTI-USUARIO SIMPLE
 # =========================================================
 def check_password():
-    """Devuelve True si el usuario ingresó la contraseña correcta."""
+    """Valida el usuario y contraseña contra los secrets."""
     def password_entered():
-        if st.session_state["password"] == st.secrets["password"]:
+        usuario = st.session_state["username"]
+        pwd = st.session_state["password"]
+        
+        # Diccionario de claves permitidas desde st.secrets
+        passwords_validas = {
+            "admin": st.secrets.get("admin_password", "admin123"),
+            "jnavarrete": st.secrets.get("jnavarrete_password", "juan123"),
+            "jhernandez": st.secrets.get("jhernandez_password", "jorge2026")
+        }
+        
+        if usuario in passwords_validas and pwd == passwords_validas[usuario]:
             st.session_state["password_correct"] = True
-            del st.session_state["password"]  # Borra la contraseña de la memoria por seguridad
+            st.session_state["current_user"] = usuario
+            del st.session_state["password"]  # Borra la contraseña de la memoria
         else:
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        st.markdown("<h2 style='text-align: center; color: #619b40;'>🔒 Acceso Restringido - Admin</h2>", unsafe_allow_html=True)
-        st.text_input("Ingresa la contraseña del administrador:", type="password", on_change=password_entered, key="password")
+        st.markdown("<h2 style='text-align: center; color: #619b40;'>🔒 Control de Acceso - Sistema QA/QC</h2>", unsafe_allow_html=True)
+        st.selectbox("Selecciona tu usuario:", ["admin", "jnavarrete", "jhernandez"], key="username")
+        st.text_input("Ingresa tu contraseña:", type="password", on_change=password_entered, key="password")
         return False
     elif not st.session_state["password_correct"]:
-        st.markdown("<h2 style='text-align: center; color: #619b40;'>🔒 Acceso Restringido - Admin</h2>", unsafe_allow_html=True)
-        st.text_input("Ingresa la contraseña del administrador:", type="password", on_change=password_entered, key="password")
+        st.markdown("<h2 style='text-align: center; color: #619b40;'>🔒 Control de Acceso - Sistema QA/QC</h2>", unsafe_allow_html=True)
+        st.selectbox("Selecciona tu usuario:", ["admin", "jnavarrete", "jhernandez"], key="username")
+        st.text_input("Ingresa tu contraseña:", type="password", on_change=password_entered, key="password")
         st.error("❌ Contraseña incorrecta. Inténtalo de nuevo.")
         return False
     else:
         return True
 
-# Si la contraseña no es correcta, detiene la app aquí
+# Si no ha iniciado sesión correctamente, detiene la app aquí
 if not check_password():
     st.stop()
 
 
 # =========================================================
-# A PARTIR DE AQUÍ FUNCIONA TU APLICACIÓN SANA Y NORMAL
+# A PARTIR DE AQUÍ FUNCIONA LA APLICACIÓN
 # =========================================================
 
 # 🔗 URLs RAW DE LOGO, FRANJA Y PERSONAJE EN GITHUB
@@ -330,6 +343,17 @@ idx_semana_defecto = max(0, min(semana_actual_num - 1, len(LISTA_SEMANAS) - 1))
 logo_bytes_sidebar = obtener_bytes_logo()
 if logo_bytes_sidebar:
     st.sidebar.image(logo_bytes_sidebar, use_container_width=True)
+
+# Saludo indicando quién ha ingresado
+st.sidebar.success(f"👤 Conectado como: **{st.session_state['current_user'].upper()}**")
+
+# 🛠️ HERRAMIENTA EXCLUSIVA PARA J. NAVARRETE (Generador de contraseñas)
+if st.session_state["current_user"] == "jnavarrete":
+    with st.sidebar.expander("🛠️ Generador de Texto / Claves"):
+        st.info("Herramienta exclusiva de Juan Navarrete.")
+        texto_a_cifrar = st.text_input("Escribe algo para codificar:")
+        if texto_a_cifrar:
+            st.code(base64.b64encode(texto_a_cifrar.encode('utf-8')).decode('utf-8'))
 
 st.markdown("<h1 style='color: #619b40; margin-bottom: 0px;'>Sistema de Gestión de Activos Físicos - QA/QC</h1>", unsafe_allow_html=True)
 st.markdown("<h4 style='color: #F97316; margin-top: 5px;'><i>Control Operativo de Inspectores e Histórico de Informes</i></h4>", unsafe_allow_html=True)
