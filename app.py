@@ -446,10 +446,10 @@ if logo_bytes_sidebar:
     st.sidebar.image(logo_bytes_sidebar, use_container_width=True)
 
 # =========================================================
-# ENCABEZADO PRINCIPAL CON FRANJA Y ESTILOS (COLORES INTERCAMBIADOS)
+# ENCABEZADO PRINCIPAL CON FRANJA Y ESTILOS
 # =========================================================
 st.markdown("<h1 style='color: #619b40; margin-bottom: 0px;'>Sistema de Gestión de Activos Físicos - QA/QC</h1>", unsafe_allow_html=True)
-st.markdown("<h4 style='color: #1E3A8A; margin-top: 5px;'><i>Control Operativo de Inspectores e Histórico de Informes</i></h4>", unsafe_allow_html=True)
+st.markdown("<h4 style='color: #F97316; margin-top: 5px;'><i>Control Operativo de Inspectores e Histórico de Informes</i></h4>", unsafe_allow_html=True)
 
 # 📸 Carga segura de la Franja Decorativa
 franja_bytes = obtener_bytes_franja()
@@ -470,7 +470,7 @@ menu = st.sidebar.radio(
     ]
 )
 
-# 🟢 PERSONAJE EN BASE64 CON POSICIONAMIENTO LIBRE EN SIDEBAR
+# 🟢 PERSONAJE EN BASE64 CON POSICIONAMIENTO EN CENTÍMETROS
 personaje_bytes = obtener_bytes_personaje()
 if personaje_bytes:
     b64_img = base64.b64encode(personaje_bytes).decode("utf-8")
@@ -478,9 +478,9 @@ if personaje_bytes:
         f"""
         <style>
             .personaje-flotante {{
-                margin-top: 16cm;    /* ⬇️ AJUSTE VERTICAL */
-                margin-left: 0.8cm; /* ➡️ AJUSTE HORIZONTAL */
-                width: 150px;       /* 📐 Ancho de la imagen */
+                margin-top: 16cm;   /* ⬇️ AJUSTE VERTICAL A 16 CM */
+                margin-left: 0.8cm; /* ➡️ AJUSTE HORIZONTAL A 0.8 CM */
+                width: 150px;       /* 📐 Ancho fijado en 150px */
                 display: block;
             }}
         </style>
@@ -640,7 +640,6 @@ elif menu == "📊 Historial e Informes":
                 df_resumen_avance.columns = ['Inspector', 'Avance Promedio (%)']
                 
                 # Definición de la paleta personalizada
-                # 0% Gris -> Azul grisáceo -> Azul -> Verde azulado -> Verde -> 100% Verde Institucional
                 escala_colores_custom = [
                     [0.0, "#9CA3AF"],   # 0% Gris
                     [0.2, "#64748B"],   # 20% Azul Grisáceo
