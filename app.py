@@ -474,17 +474,23 @@ if personaje_bytes:
     st.sidebar.markdown(
         """
         <style>
-            /* Asegura que la sidebar sea el contenedor de referencia */
-            [data-testid="stSidebarUserContent"] {
-                position: relative;
+            /* 1. Definir la barra lateral como contenedor de referencia */
+            [data-testid="stSidebar"] > div:first-child {
+                position: relative !important;
             }
-            
-            /* Ajuste milimétrico de la imagen */
+
+            /* 2. Posicionamiento absoluto y libre del personaje */
             .sidebar-personaje-custom {
-                position: relative;
-                top: 20.5cm;     /* ⬇️ Desplaza la imagen 20.5 cm hacia ABAJO desde su posición actual */
-                left: 2.2cm;    /* ➡️ Desplaza la imagen 2.2 cm hacia la DERECHA */
-                z-index: 999;
+                position: absolute !important;
+                top: 12cm !important;   /* ⬇️ Controla qué tan ABAJO está (Aumenta o disminuye en cm / px) */
+                left: 2cm !important;   /* ➡️ Controla qué tan a la DERECHA está (Aumenta o disminuye en cm / px) */
+                z-index: 99999 !important;
+            }
+
+            /* Evitar que Streamlit limite el tamaño o margen interno del contenedor */
+            .sidebar-personaje-custom div, .sidebar-personaje-custom img {
+                margin: 0 !important;
+                padding: 0 !important;
             }
         </style>
         """,
