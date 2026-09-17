@@ -34,7 +34,7 @@ st.set_page_config(
 )
 
 # =========================================================
-# SISTEMA DE SEGURIDAD MULTI-USUARIO SIMPLE
+# SISTEMA DE SEGURIDAD MULTI-USUARIO SIMPLE CON LOGOUT
 # =========================================================
 def check_password():
     """Valida el usuario y contraseña contra los secrets."""
@@ -42,7 +42,6 @@ def check_password():
         usuario = st.session_state["username"]
         pwd = st.session_state["password"]
         
-        # Diccionario de claves permitidas desde st.secrets
         passwords_validas = {
             "admin": st.secrets.get("admin_password", "admin123"),
             "jnavarrete": st.secrets.get("jnavarrete_password", "juan123"),
@@ -52,25 +51,22 @@ def check_password():
         if usuario in passwords_validas and pwd == passwords_validas[usuario]:
             st.session_state["password_correct"] = True
             st.session_state["current_user"] = usuario
-            del st.session_state["password"]  # Borra la contraseña de la memoria
+            if "password" in st.session_state:
+                del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
 
-    if "password_correct" not in st.session_state:
+    if "password_correct" not in st.session_state or not st.session_state["password_correct"]:
         st.markdown("<h2 style='text-align: center; color: #619b40;'>🔒 Control de Acceso - Sistema QA/QC</h2>", unsafe_allow_html=True)
         st.selectbox("Selecciona tu usuario:", ["admin", "jnavarrete", "jhernandez"], key="username")
         st.text_input("Ingresa tu contraseña:", type="password", on_change=password_entered, key="password")
-        return False
-    elif not st.session_state["password_correct"]:
-        st.markdown("<h2 style='text-align: center; color: #619b40;'>🔒 Control de Acceso - Sistema QA/QC</h2>", unsafe_allow_html=True)
-        st.selectbox("Selecciona tu usuario:", ["admin", "jnavarrete", "jhernandez"], key="username")
-        st.text_input("Ingresa tu contraseña:", type="password", on_change=password_entered, key="password")
-        st.error("❌ Contraseña incorrecta. Inténtalo de nuevo.")
+        if "password_correct" in st.session_state and not st.session_state["password_correct"]:
+            st.error("❌ Contraseña incorrecta. Inténtalo de nuevo.")
         return False
     else:
         return True
 
-# Si no ha iniciado sesión correctamente, detiene la app aquí
+# Si no ha iniciado sesión, detiene la ejecución aquí
 if not check_password():
     st.stop()
 
@@ -344,8 +340,13 @@ logo_bytes_sidebar = obtener_bytes_logo()
 if logo_bytes_sidebar:
     st.sidebar.image(logo_bytes_sidebar, use_container_width=True)
 
-# Saludo indicando quién ha ingresado
+# Saludo e Indicador de Sesión con Botón de Cerrar Sesión
 st.sidebar.success(f"👤 Conectado como: **{st.session_state['current_user'].upper()}**")
+if st.sidebar.button("🚪 Cerrar Sesión", use_container_width=True):
+    st.session_state["password_correct"] = False
+    st.rerun()
+
+st.sidebar.markdown("---")
 
 # 🛠️ HERRAMIENTA EXCLUSIVA PARA J. NAVARRETE (Generador de contraseñas)
 if st.session_state["current_user"] == "jnavarrete":
