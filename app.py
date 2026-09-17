@@ -468,15 +468,30 @@ menu = st.sidebar.radio(
     ]
 )
 
-# 🟢 PERSONAJE EN LA PARTE INFERIOR Y MÁS PEQUEÑO
+# 🟢 PERSONAJE FIJO EN EL PIE DE LA SIDEBAR (STICKY FOOTER + ANCHO 150px)
 personaje_bytes = obtener_bytes_personaje()
 if personaje_bytes:
-    # Genera espacio vertical dinámico para empujar la imagen al pie
-    st.sidebar.markdown("<div style='margin-top: 100px;'></div>", unsafe_allow_html=True)
-    col_p1, col_p2, col_p3 = st.sidebar.columns([1, 2, 1])
-    with col_p2:
-        # Se fija el ancho en 120px para que se vea más pequeño
-        st.image(personaje_bytes, width=120)
+    st.sidebar.markdown(
+        """
+        <style>
+            [data-testid="stSidebar"] {
+                display: flex;
+                flex-direction: column;
+            }
+            .sidebar-sticky-footer {
+                position: fixed;
+                bottom: 20px;
+                left: 20px;
+                z-index: 999;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+    with st.sidebar:
+        st.markdown('<div class="sidebar-sticky-footer">', unsafe_allow_html=True)
+        st.image(personaje_bytes, width=150)
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
 # MÓDULO 1: REGISTRO DE ACTIVIDADES (ESCRITURA)
