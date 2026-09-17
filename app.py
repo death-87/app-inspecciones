@@ -70,7 +70,7 @@ credentials = {
         "jorge_hernandez": {
             "name": "Jhernandez",
             "email": "",
-            "password": "$2b$12$4ZQXYCGonjQWZtvrWvZ9ZekBjV9tWkut7AOGSD04tbNFAxPrcosJu" # REEMPLAZAR ESTO
+            "password": "$2b$12$aPgbR2qrBBlX6XCJ9kdlE.rNKLG2YLXc.93ISMb4KnQ9HyS6u8aJu" # REEMPLAZAR ESTO
         },
         "admin": {
             "name": "Administrador Principal",
