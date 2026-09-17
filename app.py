@@ -447,8 +447,16 @@ if logo_bytes_sidebar:
 # =========================================================
 # ENCABEZADO PRINCIPAL CON FRANJA Y ESTILOS
 # =========================================================
-st.markdown("<h1 style='color: #1E3A8A; margin-bottom: 0px;'>Sistema de Gestión de Activos Físicos - QA/QC</h1>", unsafe_allow_html=True)
-st.markdown("<h4 style='color: #619b40; margin-top: 5px;'><i>Control Operativo de Inspectores e Histórico de Informes</i></h4>", unsafe_allow_html=True)
+st.markdown(
+    "<h1 style='color: #619b40; margin-bottom: 0px;'>Sistema de Gestión de"
+    " Activos Físicos - QA/QC</h1>",
+    unsafe_allow_html=True,
+)
+st.markdown(
+    "<h4 style='color: #1E3A8A; margin-top: 5px;'><i>Control Operativo de"
+    " Inspectores e Histórico de Informes</i></h4>",
+    unsafe_allow_html=True,
+)
 
 # 📸 Carga segura de la Franja Decorativa
 franja_bytes = obtener_bytes_franja()
