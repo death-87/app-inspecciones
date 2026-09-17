@@ -34,21 +34,20 @@ st.set_page_config(
 )
 
 # =========================================================
-# CONTROL DE PERMISOS (MODO PÚBLICO DE LECTURA + ADMIN OPCIONAL)
-# =========================================================
-if "admin_logueado" not in st.session_state:
-    st.session_state["admin_logueado"] = False
-
-# =========================================================
-# A PARTIR DE AQUÍ FUNCIONA LA APLICACIÓN PARA TODOS
+# A PARTIR DE AQUÍ FUNCIONA TU APLICACIÓN SANA Y NORMAL
 # =========================================================
 
+# 🔗 URLs RAW DE LOGO, FRANJA Y PERSONAJE EN GITHUB
 URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/logo.png"
 URL_FRANJA_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/franja.png"
 URL_PERSONAJE_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/personaje.png"
 
+# 🆔 ID DE TU HOJA DE GOOGLE SHEETS
 SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 
+# =========================================================
+# FUNCIONES PARA DESCARGA Y CACHÉ DE IMÁGENES EN MEMORIA
+# =========================================================
 @st.cache_data(ttl=3600)
 def obtener_bytes_imagen(url):
     try:
@@ -68,6 +67,9 @@ def obtener_bytes_franja():
 def obtener_bytes_personaje():
     return obtener_bytes_imagen(URL_PERSONAJE_GITHUB)
 
+# =========================================================
+# CONEXIÓN DIRECTA CON GOOGLE SHEETS VIA GSPREAD
+# =========================================================
 def conectar_google_sheets():
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
@@ -300,24 +302,6 @@ logo_bytes_sidebar = obtener_bytes_logo()
 if logo_bytes_sidebar:
     st.sidebar.image(logo_bytes_sidebar, use_container_width=True)
 
-# Panel de control de acceso de administrador discreto en la barra lateral
-if not st.session_state["admin_logueado"]:
-    with st.sidebar.expander("🔐 Acceso Administrador"):
-        pass_ingresada = st.text_input("Contraseña de Admin:", type="password")
-        if st.button("Ingresar como Admin"):
-            if pass_ingresada == st.secrets.get("password", "Mechanix123"):
-                st.session_state["admin_logueado"] = True
-                st.rerun()
-            else:
-                st.error("Contraseña incorrecta")
-else:
-    st.sidebar.success("👑 Modo Administrador Activo")
-    if st.sidebar.button("🔓 Cerrar Sesión Admin", use_container_width=True):
-        st.session_state["admin_logueado"] = False
-        st.rerun()
-
-st.sidebar.markdown("---")
-
 st.markdown("<h1 style='color: #619b40; margin-bottom: 0px;'>Sistema de Gestión de Activos Físicos - QA/QC</h1>", unsafe_allow_html=True)
 st.markdown("<h4 style='color: #F97316; margin-top: 5px;'><i>Control Operativo de Inspectores e Histórico de Informes</i></h4>", unsafe_allow_html=True)
 
@@ -355,43 +339,35 @@ if personaje_bytes:
 # =========================================================
 if menu == "📝 Registrar Actividad por Inspector":
     st.subheader("📋 Formulario de Ingreso de Actividades")
-    
-    if not st.session_state["admin_logueado"]:
-        st.info("👁️ **Modo Visualización:** Cualquier visitante puede ver esta sección, pero el formulario de ingreso está protegido. Si eres administrador, abre la sección '🔐 Acceso Administrador' en la barra lateral.")
-    
-    # Si no es admin, los campos se muestran desactivados (solo lectura)
-    editable = st.session_state["admin_logueado"]
-    
     with st.form("form_actividades_inspector", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
-            inspector_seleccionado = st.selectbox("👷‍♂️ Seleccionar Inspector asignado:", LISTA_INSPECTORES, disabled=not editable)
-            fecha_actividad = st.date_input("📅 Fecha de Inspección:", datetime.now(), disabled=not editable)
-            semana_seleccionada = st.selectbox("🗓️ Semana Operativa:", LISTA_SEMANAS, index=idx_semana_defecto, disabled=not editable)
-            planta_seleccionada = st.selectbox("🏭 Planta / Unidad:", LISTA_PLANTAS, disabled=not editable)
+            inspector_seleccionado = st.selectbox("👷‍♂️ Seleccionar Inspector asignado:", LISTA_INSPECTORES)
+            fecha_actividad = st.date_input("📅 Fecha de Inspección:", datetime.now())
+            semana_seleccionada = st.selectbox("🗓️ Semana Operativa:", LISTA_SEMANAS, index=idx_semana_defecto)
+            planta_seleccionada = st.selectbox("🏭 Planta / Unidad:", LISTA_PLANTAS)
         with col2:
-            tag_equipo = st.text_input("🏷️ TAG del Equipo / Línea Piping:", placeholder="Ej: C-1302 / E-2101 / PIP-001", disabled=not editable)
-            porcentaje_avance = st.slider("📊 Porcentaje de Avance:", min_value=0, max_value=100, value=0, step=5, format="%d%%", disabled=not editable)
-            estado_liberacion = st.selectbox("📌 Estado de la Inspección:", ESTADOS_LIBERACION, disabled=not editable)
+            tag_equipo = st.text_input("🏷️ TAG del Equipo / Línea Piping:", placeholder="Ej: C-1302 / E-2101 / PIP-001")
+            porcentaje_avance = st.slider("📊 Porcentaje de Avance:", min_value=0, max_value=100, value=0, step=5, format="%d%%")
+            estado_liberacion = st.selectbox("📌 Estado de la Inspección:", ESTADOS_LIBERACION)
 
-        actividad_realizada = st.text_area("🛠️ Actividades Realizadas por el Inspector:", placeholder="Ej: Inspección visual de junta...", disabled=not editable)
-        observaciones = st.text_area("💬 Observaciones Adicionales / Recomendaciones:", placeholder="Escribe comentarios extra...", disabled=not editable)
+        actividad_realizada = st.text_area("🛠️ Actividades Realizadas por el Inspector:", placeholder="Ej: Inspección visual de junta...")
+        observaciones = st.text_area("💬 Observaciones Adicionales / Recomendaciones:", placeholder="Escribe comentarios extra...")
         
-        btn_guardar = st.form_submit_button("☁️ Guardar Registro en Google Sheets", disabled=not editable)
+        btn_guardar = st.form_submit_button("☁️ Guardar Registro en Google Sheets")
         if btn_guardar:
-            if editable:
-                if tag_equipo and actividad_realizada:
-                    try:
-                        sheet = obtener_hoja_actividades()
-                        todas_las_filas = sheet.get_all_values()
-                        if len(todas_las_filas) == 0:
-                            sheet.append_row(["fecha", "semana", "planta", "inspector", "tag_equipo", "actividad_realizada", "avance", "observaciones", "estado_liberacion"])
-                        sheet.append_row([str(fecha_actividad), semana_seleccionada, planta_seleccionada, inspector_seleccionado, tag_equipo.strip(), actividad_realizada.strip(), f"{porcentaje_avance}%", observaciones.strip(), estado_liberacion])
-                        st.success(f"✅ ¡Actividad de **{inspector_seleccionado}** guardada con éxito!")
-                    except Exception as ex:
-                        st.error(f"❌ Error al guardar en la nube: {ex}")
-                else:
-                    st.error("⚠️ Completa los campos obligatorios: **TAG del Equipo** y **Actividades Realizadas**.")
+            if tag_equipo and actividad_realizada:
+                try:
+                    sheet = obtener_hoja_actividades()
+                    todas_las_filas = sheet.get_all_values()
+                    if len(todas_las_filas) == 0:
+                        sheet.append_row(["fecha", "semana", "planta", "inspector", "tag_equipo", "actividad_realizada", "avance", "observaciones", "estado_liberacion"])
+                    sheet.append_row([str(fecha_actividad), semana_seleccionada, planta_seleccionada, inspector_seleccionado, tag_equipo.strip(), actividad_realizada.strip(), f"{porcentaje_avance}%", observaciones.strip(), estado_liberacion])
+                    st.success(f"✅ ¡Actividad de **{inspector_seleccionado}** guardada con éxito!")
+                except Exception as ex:
+                    st.error(f"❌ Error al guardar en la nube: {ex}")
+            else:
+                st.error("⚠️ Completa los campos obligatorios: **TAG del Equipo** y **Actividades Realizadas**.")
 
 elif menu == "📊 Historial e Informes":
     st.subheader("🔍 Consulta de Historial y Generación de Informes por Día o Semana")
@@ -438,46 +414,40 @@ elif menu == "📊 Historial e Informes":
 
 elif menu == "📈 Reporte Planificación":
     st.subheader("📅 Módulo de Registro y Control de Planificación")
-    
-    editable_plan = st.session_state["admin_logueado"]
-    if not editable_plan:
-        st.info("👁️ **Modo Visualización:** Puedes ver y descargar los datos de planificación, pero las opciones de edición están restringidas al administrador.")
-
     with st.form("form_planificacion", clear_on_submit=True):
         col1, col2, col3 = st.columns(3)
         with col1:
-            p_planta = st.selectbox("🏭 Planta:", LISTA_PLANTAS, disabled=not editable_plan)
-            p_tipo_informe = st.selectbox("📋 Tipo de Informe:", TIPOS_INFORME, disabled=not editable_plan)
-            p_circuito = st.text_input("🔧 Circuito / Equipo:", disabled=not editable_plan)
-            p_f_inicio = st.date_input("📅 Fecha Inicio:", datetime.now(), disabled=not editable_plan)
-            p_f_fin = st.date_input("📅 Fecha Fin:", datetime.now(), disabled=not editable_plan)
-            p_cont_insp = st.number_input("🔢 Contribución Inspección:", min_value=0, value=0, disabled=not editable_plan)
-            p_programa = st.text_input("📌 Programa:", disabled=not editable_plan)
+            p_planta = st.selectbox("🏭 Planta:", LISTA_PLANTAS)
+            p_tipo_informe = st.selectbox("📋 Tipo de Informe:", TIPOS_INFORME)
+            p_circuito = st.text_input("🔧 Circuito / Equipo:")
+            p_f_inicio = st.date_input("📅 Fecha Inicio:", datetime.now())
+            p_f_fin = st.date_input("📅 Fecha Fin:", datetime.now())
+            p_cont_insp = st.number_input("🔢 Contribución Inspección:", min_value=0, value=0)
+            p_programa = st.text_input("📌 Programa:")
         with col2:
-            p_insp_dci = st.selectbox("👷‍♂️ Inspector DCI:", LISTA_INSPECTORES_DCI, disabled=not editable_plan)
-            p_insp_ingemars = st.selectbox("👷‍♂️ Inspector Ingemars:", ["Todos"] + LISTA_INSPECTORES, disabled=not editable_plan)
-            p_dias_enap = st.number_input("⏱️ Días ENAP:", min_value=0, value=0, disabled=not editable_plan)
-            p_otep = st.text_input("📄 N° OTEP:", disabled=not editable_plan)
-            p_informe_iv = st.text_input("📑 N° Informe IV:", disabled=not editable_plan)
-            p_status = st.selectbox("📌 Status:", ESTADOS_STATUS, disabled=not editable_plan)
-            p_f_entrega_ope = st.date_input("📅 Fecha entrega Ope.:", datetime.now(), disabled=not editable_plan)
+            p_insp_dci = st.selectbox("👷‍♂️ Inspector DCI:", LISTA_INSPECTORES_DCI)
+            p_insp_ingemars = st.selectbox("👷‍♂️ Inspector Ingemars:", ["Todos"] + LISTA_INSPECTORES)
+            p_dias_enap = st.number_input("⏱️ Días ENAP:", min_value=0, value=0)
+            p_otep = st.text_input("📄 N° OTEP:")
+            p_informe_iv = st.text_input("📑 N° Informe IV:")
+            p_status = st.selectbox("📌 Status:", ESTADOS_STATUS)
+            p_f_entrega_ope = st.date_input("📅 Fecha entrega Ope.:", datetime.now())
         with col3:
-            p_cont_lib = st.number_input("🔢 Contador liberación:", min_value=0, value=0, disabled=not editable_plan)
-            p_lib_final = st.text_input("✅ Liberación final:", disabled=not editable_plan)
-            p_cont_enap = st.number_input("🔢 Contador ENAP:", min_value=0, value=0, disabled=not editable_plan)
-            p_cont_cump_enap = st.number_input("📊 Cumplimiento ENAP:", min_value=0, value=0, disabled=not editable_plan)
-            p_cont_dias_inf = st.number_input("📉 Días informe:", min_value=0, value=0, disabled=not editable_plan)
-            p_archivo_url = st.text_input("🔗 URL Archivo:", disabled=not editable_plan)
-        p_observaciones = st.text_area("💬 Observaciones:", disabled=not editable_plan)
+            p_cont_lib = st.number_input("🔢 Contador liberación:", min_value=0, value=0)
+            p_lib_final = st.text_input("✅ Liberación final:")
+            p_cont_enap = st.number_input("🔢 Contador ENAP:", min_value=0, value=0)
+            p_cont_cump_enap = st.number_input("📊 Cumplimiento ENAP:", min_value=0, value=0)
+            p_cont_dias_inf = st.number_input("📉 Días informe:", min_value=0, value=0)
+            p_archivo_url = st.text_input("🔗 URL Archivo:")
+        p_observaciones = st.text_area("💬 Observaciones:")
         
-        if st.form_submit_button("☁️ Guardar Planificación", disabled=not editable_plan):
-            if editable_plan:
-                try:
-                    ws_plan = obtener_hoja_planificacion()
-                    ws_plan.append_row([p_planta, p_tipo_informe, p_circuito.strip(), str(p_f_inicio), str(p_f_fin), str(p_cont_insp), p_programa.strip(), p_insp_dci, p_insp_ingemars, str(p_dias_enap), p_otep.strip(), p_informe_iv.strip(), p_status, str(p_f_entrega_ope), str(p_cont_lib), p_lib_final.strip(), str(p_cont_enap), str(p_cont_cump_enap), str(p_cont_dias_inf), p_archivo_url.strip(), p_observaciones.strip()])
-                    st.success("✅ ¡Planificación guardada con éxito!")
-                except Exception as ex:
-                    st.error(f"❌ Error: {ex}")
+        if st.form_submit_button("☁️ Guardar Planificación"):
+            try:
+                ws_plan = obtener_hoja_planificacion()
+                ws_plan.append_row([p_planta, p_tipo_informe, p_circuito.strip(), str(p_f_inicio), str(p_f_fin), str(p_cont_insp), p_programa.strip(), p_insp_dci, p_insp_ingemars, str(p_dias_enap), p_otep.strip(), p_informe_iv.strip(), p_status, str(p_f_entrega_ope), str(p_cont_lib), p_lib_final.strip(), str(p_cont_enap), str(p_cont_cump_enap), str(p_cont_dias_inf), p_archivo_url.strip(), p_observaciones.strip()])
+                st.success("✅ ¡Planificación guardada con éxito!")
+            except Exception as ex:
+                st.error(f"❌ Error: {ex}")
 
     df_plan = cargar_datos_planificacion()
     if not df_plan.empty:
