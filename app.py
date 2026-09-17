@@ -33,7 +33,7 @@ st.set_page_config(
 
 # 🔗 URLs RAW DE LOGO Y FRANJA EN GITHUB
 URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/logo.png"
-URL_FRANJA_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/franja.png"
+URL_FRANJA_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/franja.jpg"
 
 # 🆔 ID DE TU HOJA DE GOOGLE SHEETS
 SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
