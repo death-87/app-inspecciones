@@ -42,6 +42,24 @@ URL_PERSONAJE_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspeccio
 SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 
 # =========================================================
+# GESTIÓN DE AUTENTICACIÓN Y ROLES DE USUARIO
+# =========================================================
+USUARIOS_SISTEMA = {
+    "invitado": {"password": "123", "rol": "invitado", "nombre": "Visitante / Solo Lectura"},
+    "jhernandez": {"password": "jorge2026", "rol": "operador", "nombre": "jhernandez (Agregar Datos)"},
+    "admin": {"password": "Mechanix123", "rol": "admin", "jnavarrete": "Administrador General"}
+}
+
+if "autenticado" not in st.session_state:
+    st.session_state.autenticado = False
+if "usuario_actual" not in st.session_state:
+    st.session_state.usuario_actual = None
+if "rol_actual" not in st.session_state:
+    st.session_state.rol_actual = "invitado"
+if "nombre_usuario" not in st.session_state:
+    st.session_state.nombre_usuario = "Visitante"
+
+# =========================================================
 # FUNCIONES PARA DESCARGA Y CACHÉ DE IMÁGENES EN MEMORIA
 # =========================================================
 @st.cache_data(ttl=3600)
@@ -69,7 +87,6 @@ def obtener_bytes_personaje():
 # =========================================================
 def conectar_google_sheets():
     """Autentica y devuelve el cliente de Google Sheets."""
-    
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
@@ -443,11 +460,41 @@ semana_actual_num = datetime.now().isocalendar()[1]
 idx_semana_defecto = max(0, min(semana_actual_num - 1, len(LISTA_SEMANAS) - 1))
 
 # =========================================================
-# BARRA LATERAL (SIDEBAR SUPERIOR)
+# BARRA LATERAL (LOGIN Y CONTROL DE ACCESO)
 # =========================================================
 logo_bytes_sidebar = obtener_bytes_logo()
 if logo_bytes_sidebar:
     st.sidebar.image(logo_bytes_sidebar, use_container_width=True)
+
+st.sidebar.markdown("### 🔐 Control de Acceso")
+
+if not st.session_state.autenticado:
+    with st.sidebar.form("form_login"):
+        user_input = st.text_input("Usuario:")
+        pass_input = st.text_input("Contraseña:", type="password")
+        btn_login = st.form_submit_button("🔑 Iniciar Sesión")
+        
+        if btn_login:
+            if user_input in USUARIOS_SISTEMA and USUARIOS_SISTEMA[user_input]["password"] == pass_input:
+                st.session_state.autenticado = True
+                st.session_state.usuario_actual = user_input
+                st.session_state.rol_actual = USUARIOS_SISTEMA[user_input]["rol"]
+                st.session_state.nombre_usuario = USUARIOS_SISTEMA[user_input]["nombre"]
+                st.rerun()
+            else:
+                st.sidebar.error("❌ Usuario o contraseña incorrectos")
+    
+    st.sidebar.info("ℹ️ Entrando como **Visitante** por defecto (Solo Lectura).")
+else:
+    st.sidebar.success(f"👤 Conectado:\n**{st.session_state.nombre_usuario}**")
+    if st.sidebar.button("🚪 Cerrar Sesión"):
+        st.session_state.autenticado = False
+        st.session_state.usuario_actual = None
+        st.session_state.rol_actual = "invitado"
+        st.session_state.nombre_usuario = "Visitante"
+        st.rerun()
+
+st.sidebar.markdown("---")
 
 # =========================================================
 # ENCABEZADO PRINCIPAL CON FRANJA Y ESTILOS
@@ -482,8 +529,8 @@ if personaje_bytes:
         f"""
         <style>
             .personaje-flotante {{
-                margin-top: 16cm;   /* ⬇️ AJUSTE VERTICAL A 16 CM */
-                margin-left: 0.8cm; /* ➡️ AJUSTE HORIZONTAL A 0.8 CM */
+                margin-top: 14cm;   /* ⬇️ AJUSTE VERTICAL */
+                margin-left: 0.8cm; /* ➡️ AJUSTE HORIZONTAL */
                 width: 150px;       /* 📐 Ancho fijado en 150px */
                 display: block;
             }}
@@ -493,11 +540,16 @@ if personaje_bytes:
         unsafe_allow_html=True
     )
 
+rol_usuario = st.session_state.rol_actual
+
 # =========================================================
 # MÓDULO 1: REGISTRO DE ACTIVIDADES (ESCRITURA)
 # =========================================================
 if menu == "📝 Registrar Actividad por Inspector":
     st.subheader("📋 Formulario de Ingreso de Actividades")
+    
+    if rol_usuario == "invitado":
+        st.warning("⚠️ Tu cuenta actual es de **Visitante (Solo Lectura)**. No tienes permisos para registrar actividades. Por favor inicia sesión con un usuario autorizado en la barra lateral.")
     
     with st.form("form_actividades_inspector", clear_on_submit=True):
         col1, col2 = st.columns(2)
@@ -519,7 +571,9 @@ if menu == "📝 Registrar Actividad por Inspector":
         btn_guardar = st.form_submit_button("☁️ Guardar Registro en Google Sheets")
         
         if btn_guardar:
-            if tag_equipo and actividad_realizada:
+            if rol_usuario == "invitado":
+                st.error("❌ Acción no permitida para el rol de Visitante.")
+            elif tag_equipo and actividad_realizada:
                 try:
                     sheet = obtener_hoja_actividades()
                     todas_las_filas = sheet.get_all_values()
@@ -628,7 +682,7 @@ elif menu == "📊 Historial e Informes":
             else:
                 df_informe = pd.DataFrame()
 
-        # 📊 GRÁFICO AUTOMÁTICO CON ESCALA GRADUAL DE COLOR (0% Gris -> 100% Verde Institucional)
+        # 📊 GRÁFICO AUTOMÁTICO CON ESCALA GRADUAL DE COLOR
         if tipo_reporte == "🗓️ Semanal" and not df_informe.empty:
             st.markdown("---")
             st.markdown(f"#### 📊 Porcentaje de Avance Promedio por Inspector ({semana_informe})")
@@ -643,14 +697,13 @@ elif menu == "📊 Historial e Informes":
                 df_resumen_avance = df_grafico.groupby('inspector')['avance_num'].mean().reset_index()
                 df_resumen_avance.columns = ['Inspector', 'Avance Promedio (%)']
                 
-                # Definición de la paleta personalizada
                 escala_colores_custom = [
-                    [0.0, "#9CA3AF"],   # 0% Gris
-                    [0.2, "#64748B"],   # 20% Azul Grisáceo
-                    [0.4, "#2563EB"],   # 40% Azul
-                    [0.6, "#0D9488"],   # 60% Verde Azulado
-                    [0.8, "#16A34A"],   # 80% Verde
-                    [1.0, "#619b40"]    # 100% Verde Institucional
+                    [0.0, "#9CA3AF"],
+                    [0.2, "#64748B"],
+                    [0.4, "#2563EB"],
+                    [0.6, "#0D9488"],
+                    [0.8, "#16A34A"],
+                    [1.0, "#619b40"]
                 ]
 
                 fig = px.bar(
@@ -673,7 +726,6 @@ elif menu == "📊 Historial e Informes":
                 )
                 
                 fig.update_traces(texttemplate='%{y:.1f}%', textposition='outside')
-                
                 st.plotly_chart(fig, use_container_width=True)
 
         col_exp1, col_exp2 = st.columns(2)
@@ -718,6 +770,9 @@ elif menu == "📈 Reporte Planificación":
     st.subheader("📅 Módulo de Registro y Control de Planificación")
     st.markdown("##### *Ingrese los datos detallados de planificación para sincronizar con la nube.*")
     
+    if rol_usuario == "invitado":
+        st.warning("⚠️ Tu cuenta actual es de **Visitante (Solo Lectura)**. Puedes visualizar la planificación pero no registrar nuevos datos.")
+
     with st.form("form_planificacion", clear_on_submit=True):
         col1, col2, col3 = st.columns(3)
         
@@ -752,35 +807,38 @@ elif menu == "📈 Reporte Planificación":
         btn_guardar_plan = st.form_submit_button("☁️ Guardar Planificación en Google Sheets")
         
         if btn_guardar_plan:
-            try:
-                ws_plan = obtener_hoja_planificacion()
-                nueva_fila_plan = [
-                    p_planta,
-                    p_tipo_informe,
-                    p_circuito.strip(),
-                    str(p_f_inicio),
-                    str(p_f_fin),
-                    str(p_cont_insp),
-                    p_programa.strip(),
-                    p_insp_dci,
-                    p_insp_ingemars,
-                    str(p_dias_enap),
-                    p_otep.strip(),
-                    p_informe_iv.strip(),
-                    p_status,
-                    str(p_f_entrega_ope),
-                    str(p_cont_lib),
-                    p_lib_final.strip(),
-                    str(p_cont_enap),
-                    str(p_cont_cump_enap),
-                    str(p_cont_dias_inf),
-                    p_archivo_url.strip(),
-                    p_observaciones.strip()
-                ]
-                ws_plan.append_row(nueva_fila_plan)
-                st.success("✅ ¡Datos de planificación guardados con éxito en la pestaña 'Planificacion' de Google Sheets!")
-            except Exception as ex:
-                st.error(f"❌ Error al guardar planificación: {ex}")
+            if rol_usuario == "invitado":
+                st.error("❌ Acción no permitida para el rol de Visitante.")
+            else:
+                try:
+                    ws_plan = obtener_hoja_planificacion()
+                    nueva_fila_plan = [
+                        p_planta,
+                        p_tipo_informe,
+                        p_circuito.strip(),
+                        str(p_f_inicio),
+                        str(p_f_fin),
+                        str(p_cont_insp),
+                        p_programa.strip(),
+                        p_insp_dci,
+                        p_insp_ingemars,
+                        str(p_dias_enap),
+                        p_otep.strip(),
+                        p_informe_iv.strip(),
+                        p_status,
+                        str(p_f_entrega_ope),
+                        str(p_cont_lib),
+                        p_lib_final.strip(),
+                        str(p_cont_enap),
+                        str(p_cont_cump_enap),
+                        str(p_cont_dias_inf),
+                        p_archivo_url.strip(),
+                        p_observaciones.strip()
+                    ]
+                    ws_plan.append_row(nueva_fila_plan)
+                    st.success("✅ ¡Datos de planificación guardados con éxito en la pestaña 'Planificacion' de Google Sheets!")
+                except Exception as ex:
+                    st.error(f"❌ Error al guardar planificación: {ex}")
 
     st.markdown("---")
     st.markdown("### 📊 Historial y Registros de Planificación en la Nube")
@@ -802,15 +860,12 @@ elif menu == "📈 Reporte Planificación":
         st.info("ℹ️ Aún no hay registros de planificación guardados.")
 
 # =========================================================
-# PIE DE PÁGINA (LOGO Y FRANJA COMPLETA EN EL SECTOR INFERIOR)
+# PIE DE PÁGINA (LOGO CENTRADO SIN FRANJA INFERIOR)
 # =========================================================
 st.markdown("<br/><br/>", unsafe_allow_html=True)
 
-# Logo centrado arriba de la franja final
 col_foot1, col_foot2, col_foot3 = st.columns([2, 1, 2])
 with col_foot2:
     logo_footer_bytes = obtener_bytes_logo()
     if logo_footer_bytes:
         st.image(logo_footer_bytes, width=150)
-
-# 📸 FRANJA INFERIOR CUBRIENDO EL 100% DEL ANCHO DE LA PÁGINA
