@@ -437,7 +437,7 @@ semana_actual_num = datetime.now().isocalendar()[1]
 idx_semana_defecto = max(0, min(semana_actual_num - 1, len(LISTA_SEMANAS) - 1))
 
 # =========================================================
-# BARRA LATERAL (SIDEBAR CON LOGO Y PERSONAJE INFERIOR)
+# BARRA LATERAL (SIDEBAR SUPERIOR)
 # =========================================================
 logo_bytes_sidebar = obtener_bytes_logo()
 if logo_bytes_sidebar:
@@ -457,7 +457,7 @@ else:
     st.markdown("<hr style='border: 2px solid #619b40;'/>", unsafe_allow_html=True)
 
 # =========================================================
-# MENÚ Y NAVEGACIÓN
+# MENÚ Y NAVEGACIÓN (SIDEBAR)
 # =========================================================
 menu = st.sidebar.radio(
     "📌 Selecciona una Opción:",
@@ -468,11 +468,15 @@ menu = st.sidebar.radio(
     ]
 )
 
-# 🧍 Personaje en la parte inferior de la Sidebar
+# 🟢 PERSONAJE EN LA PARTE INFERIOR Y MÁS PEQUEÑO
 personaje_bytes = obtener_bytes_personaje()
 if personaje_bytes:
-    st.sidebar.markdown("<br/>", unsafe_allow_html=True)
-    st.sidebar.image(personaje_bytes, use_container_width=True)
+    # Genera espacio vertical dinámico para empujar la imagen al pie
+    st.sidebar.markdown("<div style='margin-top: 100px;'></div>", unsafe_allow_html=True)
+    col_p1, col_p2, col_p3 = st.sidebar.columns([1, 2, 1])
+    with col_p2:
+        # Se fija el ancho en 120px para que se vea más pequeño
+        st.image(personaje_bytes, width=120)
 
 # =========================================================
 # MÓDULO 1: REGISTRO DE ACTIVIDADES (ESCRITURA)
