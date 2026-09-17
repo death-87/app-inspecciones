@@ -43,17 +43,17 @@ credentials = {
         "admin": {
             "name": "Administrador General",
             "email": "admin@empresa.com",
-            "password": "pega_aqui_el_hash_del_admin" 
+            "password": "PEGA_AQUÍ_EL_HASH_DEL_ADMIN"  # 👈 Pega aquí el hash que generes para el Admin
         },
         "jnavarrete": {
             "name": "Juan Navarrete",
             "email": "juan@empresa.com",
-            "password": "pega_aqui_el_hash_de_juan" 
+            "password": "PEGA_AQUÍ_EL_HASH_DE_JUAN"     # 👈 Pega aquí el hash que generes para Juan
         },
         "jhernandez": {
             "name": "Jorge Hernandez",
             "email": "jorge@empresa.com",
-            "password": "$2b$12$4ZQXYCGonjQWZtvrWvZ9ZekBjV9tWkut7AOGSD04tbNFAxPrcosJu" 
+            "password": "$2b$12$4ZQXYCGonjQWZtvrWvZ9ZekBjV9tWkut7AOGSD04tbNFAxPrcosJu"  # 👈 Hash actual de Jorge
         }
     }
 }
