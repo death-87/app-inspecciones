@@ -65,7 +65,7 @@ credentials = {
             "name": "Juan Navarrete",
             "email": "juan@empresa.com",
             "password": "$2b$12$4Oq9pZfA2KtEtM/bBzA.3eKuLvYw5YAaFlpMnTWpfn8Ohkk.3WqP6" 
-        },
+        }
         # 👇 AQUÍ AGREGAS TU USUARIO ADMIN 👇
         "admin": {
             "name": "Administrador General",
