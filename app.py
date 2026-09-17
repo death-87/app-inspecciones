@@ -814,33 +814,3 @@ with col_foot2:
         st.image(logo_footer_bytes, width=150)
 
 # 📸 FRANJA INFERIOR CUBRIENDO EL 100% DEL ANCHO DE LA PÁGINA
-franja_footer_bytes = obtener_bytes_franja()
-if franja_footer_bytes:
-    b64_franja = base64.b64encode(franja_footer_bytes).decode("utf-8")
-    st.markdown(
-        f"""
-        <style>
-            .franja-footer-full {{
-                width: 100vw;
-                position: relative;
-                left: 50%;
-                right: 50%;
-                margin-left: -50vw;
-                margin-right: -50vw;
-                margin-top: 20px;
-                margin-bottom: -50px;
-                display: block;
-            }}
-            .franja-footer-full img {{
-                width: 100%;
-                height: 12px;
-                object-fit: cover;
-                display: block;
-            }}
-        </style>
-        <div class="franja-footer-full">
-            <img src="data:image/png;base64,{b64_franja}" />
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
