@@ -67,7 +67,7 @@ credentials = {
             "password": "hash_generado_aqui_para_juan" # REEMPLAZAR ESTO
         },
         "jorge_hernandez": {
-            "name": "Jorge Hernández",
+            "name": "JHernandez",
             "password": "$2b$12$4ZQXYCGonjQWZtvrWvZ9ZekBjV9tWkut7AOGSD04tbNFAxPrcosJu" # REEMPLAZAR ESTO
         },
         "admin": {
