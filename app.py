@@ -7,6 +7,7 @@ import gspread
 import plotly.express as px
 from google.oauth2.service_account import Credentials
 from datetime import datetime
+import streamlit_authenticator as stauth
 
 # Librerías para generación de PDF
 from reportlab.lib.pagesizes import letter
@@ -34,41 +35,66 @@ st.set_page_config(
 )
 
 # =========================================================
-# SISTEMA DE SEGURIDAD (LOGIN POR CONTRASEÑA)
+# 🛠️ HERRAMIENTA TEMPORAL PARA ENCRIPTAR CONTRASEÑAS
+# (Borra o comenta este bloque (con #) cuando ya tengas tus usuarios listos)
 # =========================================================
-def check_password():
-    """Devuelve True si el usuario ingresó la contraseña correcta."""
-    def password_entered():
-        # Comprueba si la contraseña ingresada coincide con la de los st.secrets
-        if st.session_state["password"] == st.secrets["password"]:
-            st.session_state["password_correct"] = True
-            del st.session_state["password"]  # Por seguridad, borra la contraseña de la memoria
-        else:
-            st.session_state["password_correct"] = False
-
-    if "password_correct" not in st.session_state:
-        # Primera vez que entra: Muestra el campo de texto
-        st.markdown("<h2 style='text-align: center; color: #619b40;'>🔒 Acceso Restringido</h2>", unsafe_allow_html=True)
-        st.text_input("Ingresa la contraseña para acceder al sistema:", type="password", on_change=password_entered, key="password")
-        return False
-    elif not st.session_state["password_correct"]:
-        # Contraseña incorrecta: Muestra el campo de texto y un error
-        st.markdown("<h2 style='text-align: center; color: #619b40;'>🔒 Acceso Restringido</h2>", unsafe_allow_html=True)
-        st.text_input("Ingresa la contraseña para acceder al sistema:", type="password", on_change=password_entered, key="password")
-        st.error("❌ Contraseña incorrecta. Inténtalo de nuevo.")
-        return False
-    else:
-        # Contraseña correcta: Permite el paso
-        return True
-
-# 🛑 DETIENE LA EJECUCIÓN SI LA CONTRASEÑA NO ES CORRECTA 🛑
-if not check_password():
-    st.stop()
-
+with st.expander("🛠️ Admin: Generador de Contraseñas Seguras (Desplegar)"):
+    st.info("Escribe la contraseña que quieres asignarle a un usuario. La herramienta te dará el código encriptado (Hash). Copia ese hash y pégalo abajo en la lista de 'credentials'.")
+    clave_nueva = st.text_input("Contraseña normal (Ej: chile2026):")
+    if clave_nueva:
+        hash_generado = stauth.Hasher([clave_nueva]).generate()[0]
+        st.code(hash_generado)
+        st.warning("☝️ Copia el código de arriba y reemplázalo en el diccionario de abajo.")
 
 # =========================================================
-# (A PARTIR DE AQUÍ, SOLO SE EJECUTA SI LA CONTRASEÑA FUE CORRECTA)
+# SISTEMA DE SEGURIDAD (LOGIN MULTI-USUARIO)
 # =========================================================
+# Aquí defines a las personas autorizadas para entrar.
+# Reemplaza los "hash_generado_aqui..." por los códigos que te dio la herramienta de arriba.
+credentials = {
+    "usernames": {
+        "juan_navarrete": {
+            "name": "Juan Navarrete",
+            "password": "hash_generado_aqui_para_juan" # REEMPLAZAR ESTO
+        },
+        "jorge_hernandez": {
+            "name": "Jorge Hernández",
+            "password": "hash_generado_aqui_para_jorge" # REEMPLAZAR ESTO
+        },
+        "admin": {
+            "name": "Administrador Principal",
+            "password": "hash_generado_aqui_para_admin" # REEMPLAZAR ESTO
+        }
+    }
+}
+
+# Configuración del motor de autenticación
+authenticator = stauth.Authenticate(
+    credentials,
+    "cookie_inspecciones_qaqc", # Nombre interno de la sesión
+    "firma_super_secreta_123",  # Clave de seguridad interna
+    cookie_expiry_days=30       # Días que dura la sesión iniciada
+)
+
+# Mostrar la caja de inicio de sesión en la pantalla
+authenticator.login()
+
+# Verificar si entró correctamente
+if st.session_state["authentication_status"] is False:
+    st.error("❌ Usuario o contraseña incorrectos")
+    st.stop()  # Detiene la carga de la página
+elif st.session_state["authentication_status"] is None:
+    st.warning("⚠️ Por favor, ingresa tu usuario y contraseña para continuar")
+    st.stop()  # Detiene la carga de la página
+
+# =========================================================
+# (A PARTIR DE AQUÍ, SOLO SE EJECUTA SI EL LOGIN FUE EXITOSO)
+# =========================================================
+
+# Botón de cerrar sesión en la barra lateral
+authenticator.logout("Cerrar Sesión", "sidebar")
+st.sidebar.markdown(f"👋 Hola, **{st.session_state['name']}**")
+st.sidebar.markdown("---")
 
 # 🔗 URLs RAW DE LOGO, FRANJA Y PERSONAJE EN GITHUB
 URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/logo.png"
@@ -119,8 +145,8 @@ def conectar_google_sheets():
         lines = [line.strip() for line in pk.split("\n") if line.strip()]
         creds_dict["private_key"] = "\n".join(lines) + "\n"
 
-    credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-    client = gspread.authorize(credentials)
+    credentials_g = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    client = gspread.authorize(credentials_g)
     return client.open_by_key(SPREADSHEET_ID)
 
 def obtener_hoja_actividades():
