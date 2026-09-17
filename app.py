@@ -77,8 +77,11 @@ def conectar_google_sheets():
     ]
     creds_dict = dict(st.secrets["connections"]["gsheets"])
     if "private_key" in creds_dict:
-        # Reemplaza los caracteres literales \n por saltos de línea reales de criptografía
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        pk = creds_dict["private_key"]
+        # Limpieza robusta para asegurar que los saltos de línea sean leídos por la criptografía
+        pk = pk.replace("\\n", "\n").strip()
+        lines = [line.strip() for line in pk.split("\n") if line.strip()]
+        creds_dict["private_key"] = "\n".join(lines) + "\n"
 
     credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     client = gspread.authorize(credentials)
