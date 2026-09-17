@@ -69,21 +69,25 @@ def obtener_bytes_personaje():
 # =========================================================
 def conectar_google_sheets():
     """Autentica y devuelve el cliente de Google Sheets."""
+    
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    
-    creds_dict = dict(st.secrets["connections"]["gsheets"])
-    
-    if "private_key" in creds_dict:
-        pk = creds_dict["private_key"]
-        pk = pk.replace("\\n", "\n").strip()
-        lines = [line.strip() for line in pk.split("\n") if line.strip()]
-        creds_dict["private_key"] = "\n".join(lines) + "\n"
 
-    credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    creds_dict = dict(st.secrets["connections"]["gsheets"])
+
+    # Corregir saltos de línea de la clave privada
+    if "private_key" in creds_dict:
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+
+    credentials = Credentials.from_service_account_info(
+        creds_dict,
+        scopes=scopes
+    )
+
     client = gspread.authorize(credentials)
+
     return client.open_by_key(SPREADSHEET_ID)
 
 def obtener_hoja_actividades():
