@@ -67,33 +67,14 @@ def obtener_bytes_personaje():
 # =========================================================
 # CONEXIÓN DIRECTA CON GOOGLE SHEETS VIA GSPREAD
 # =========================================================
-import textwrap
-
 def conectar_google_sheets():
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
+    # Al usar comillas triples en los secrets, la llave privada ya viene lista y formateada
     creds_dict = dict(st.secrets["connections"]["gsheets"])
     
-    # 1. Extraemos la llave privada guardada en los secrets
-    pk_raw = creds_dict.get("private_key", "")
-    
-    # 2. Limpiamos cualquier residuo, saltos de línea mal puestos o etiquetas previas
-    clean_base64 = (pk_raw.replace("-----BEGIN PRIVATE KEY-----", "")
-                          .replace("-----END PRIVATE KEY-----", "")
-                          .replace("\\n", "")
-                          .replace("\n", "")
-                          .strip())
-    
-    # 3. Forzamos a Python a dividirla exactamente en líneas de 64 caracteres (lo que exige cryptography)
-    wrapped_lines = textwrap.wrap(clean_base64, 64)
-    
-    # 4. Reconstruimos el formato PEM perfecto
-    formatted_pk = "-----BEGIN PRIVATE KEY-----\n" + "\n".join(wrapped_lines) + "\n-----END PRIVATE KEY-----\n"
-    creds_dict["private_key"] = formatted_pk
-
-    # Autenticación limpia
     credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     client = gspread.authorize(credentials)
     return client.open_by_key(SPREADSHEET_ID)
