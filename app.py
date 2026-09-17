@@ -61,6 +61,17 @@ credentials = {
             "email": "jorge@empresa.com",
             "password": "$2b$12$4ZQXYCGonjQWZtvrWvZ9ZekBjV9tWkut7AOGSD04tbNFAxPrcosJu" 
         }
+        "jnavarrete": {
+            "name": "Juan Navarrete",
+            "email": "juan@empresa.com",
+            "password": "$2b$12$4Oq9pZfA2KtEtM/bBzA.3eKuLvYw5YAaFlpMnTWpfn8Ohkk.3WqP6" 
+        },
+        # 👇 AQUÍ AGREGAS TU USUARIO ADMIN 👇
+        "admin": {
+            "name": "Administrador General",
+            "email": "admin@empresa.com",
+            "password": "$2b$12$VnvrDHgTgD6zCuJl9gJ74uSqR9MkawZNv9ktJpZMMEHTDc24rF.ey" 
+        }
     }
 }
 
