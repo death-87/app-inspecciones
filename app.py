@@ -474,30 +474,29 @@ if personaje_bytes:
     st.sidebar.markdown(
         """
         <style>
-            /* Convertir contenedor interno de sidebar en flexbox vertical */
+            /* Asegura que la sidebar sea el contenedor de referencia */
             [data-testid="stSidebarUserContent"] {
-                display: flex;
-                flex-direction: column;
-                height: 100%;
+                position: relative;
             }
-            /* Empujar el div contenedor del personaje al fondo y centrarlo */
-            .sidebar-personaje-container {
-                margin-top: auto;
-                padding-top: 20px;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                width: 100%;
+            
+            /* Ajuste milimétrico de la imagen */
+            .sidebar-personaje-custom {
+                position: relative;
+                top: 8.5cm;     /* ⬇️ Desplaza la imagen 2.5 cm hacia ABAJO desde su posición actual */
+                left: 1.2cm;    /* ➡️ Desplaza la imagen 1.2 cm hacia la DERECHA */
+                z-index: 999;
             }
         </style>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
-    
+
     with st.sidebar:
-        st.markdown('<div class="sidebar-personaje-container">', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="sidebar-personaje-custom">', unsafe_allow_html=True
+        )
         st.image(personaje_bytes, width=150)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # =========================================================
 # MÓDULO 1: REGISTRO DE ACTIVIDADES (ESCRITURA)
