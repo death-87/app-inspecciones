@@ -36,41 +36,24 @@ st.set_page_config(
 )
 
 # =========================================================
-# 🛠️ HERRAMIENTA TEMPORAL PARA ENCRIPTAR CONTRASEÑAS
-# (Puedes borrar esto después cuando ya tengas todos tus usuarios)
-# =========================================================
-with st.expander("🛠️ Admin: Generador de Contraseñas Seguras (Desplegar)"):
-    st.info("Escribe la contraseña que quieres asignarle a un usuario. La herramienta te dará el código encriptado (Hash).")
-    clave_nueva = st.text_input("Contraseña normal (Ej: chile2026):")
-    
-    if clave_nueva:
-        # Generar hash seguro de la contraseña usando bcrypt
-        salt = bcrypt.gensalt()
-        hash_generado = bcrypt.hashpw(clave_nueva.encode('utf-8'), salt).decode('utf-8')
-        
-        st.code(hash_generado)
-        st.warning("☝️ Copia el código de arriba y pégalo en el bloque de 'credentials'.")
-
-# =========================================================
 # SISTEMA DE SEGURIDAD (LOGIN MULTI-USUARIO)
 # =========================================================
 credentials = {
     "usernames": {
-        "jhernandez": {
-            "name": "Jorge Hernandez",
-            "email": "jorge@empresa.com",
-            "password": "$2b$12$4ZQXYCGonjQWZtvrWvZ9ZekBjV9tWkut7AOGSD04tbNFAxPrcosJu" 
+        "admin": {
+            "name": "Administrador General",
+            "email": "admin@empresa.com",
+            "password": "pega_aqui_el_hash_del_admin" 
         },
         "jnavarrete": {
             "name": "Juan Navarrete",
             "email": "juan@empresa.com",
-            "password": "$2b$12$4Oq9pZfA2KtEtM/bBzA.3eKuLvYw5YAaFlpMnTWpfn8Ohkk.3WqP6" 
+            "password": "pega_aqui_el_hash_de_juan" 
         },
-        # 👇 AQUÍ AGREGAS TU USUARIO ADMIN 👇
-        "admin": {
-            "name": "Administrador General",
-            "email": "admin@empresa.com",
-            "password": "$2b$12$VnvrDHgTgD6zCuJl9gJ74uSqR9MkawZNv9ktJpZMMEHTDc24rF.ey" 
+        "jhernandez": {
+            "name": "Jorge Hernandez",
+            "email": "jorge@empresa.com",
+            "password": "$2b$12$4ZQXYCGonjQWZtvrWvZ9ZekBjV9tWkut7AOGSD04tbNFAxPrcosJu" 
         }
     }
 }
@@ -102,6 +85,21 @@ elif st.session_state["authentication_status"] is None:
 authenticator.logout("Cerrar Sesión", "sidebar")
 st.sidebar.markdown(f"👋 Hola, **{st.session_state['name']}**")
 st.sidebar.markdown("---")
+
+# =========================================================
+# 🛠️ HERRAMIENTA PROTEGIDA: GENERADOR DE CONTRASEÑAS
+# (Solo visible para 'admin' y 'jnavarrete')
+# =========================================================
+if st.session_state["username"] in ["admin", "jnavarrete"]:
+    with st.sidebar.expander("🛠️ Generador de Claves"):
+        st.info("Escribe una clave para obtener su Hash.")
+        clave_nueva = st.text_input("Contraseña normal:", type="password")
+        
+        if clave_nueva:
+            salt = bcrypt.gensalt()
+            hash_generado = bcrypt.hashpw(clave_nueva.encode('utf-8'), salt).decode('utf-8')
+            st.code(hash_generado)
+            st.warning("☝️ Copia este código para las credentials.")
 
 # 🔗 URLs RAW DE LOGO, FRANJA Y PERSONAJE EN GITHUB
 URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/logo.png"
