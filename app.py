@@ -482,8 +482,8 @@ if personaje_bytes:
             /* Ajuste milimétrico de la imagen */
             .sidebar-personaje-custom {
                 position: relative;
-                top: 8.5cm;     /* ⬇️ Desplaza la imagen 2.5 cm hacia ABAJO desde su posición actual */
-                left: 1.2cm;    /* ➡️ Desplaza la imagen 1.2 cm hacia la DERECHA */
+                top: 8.5cm;     /* ⬇️ Desplaza la imagen 8.5 cm hacia ABAJO desde su posición actual */
+                left: 2.2cm;    /* ➡️ Desplaza la imagen 2.2 cm hacia la DERECHA */
                 z-index: 999;
             }
         </style>
