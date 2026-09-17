@@ -445,18 +445,10 @@ if logo_bytes_sidebar:
     st.sidebar.image(logo_bytes_sidebar, use_container_width=True)
 
 # =========================================================
-# ENCABEZADO PRINCIPAL CON FRANJA Y ESTILOS
+# ENCABEZADO PRINCIPAL CON FRANJA Y ESTILOS (COLORES INTERCAMBIADOS)
 # =========================================================
-st.markdown(
-    "<h1 style='color: #619b40; margin-bottom: 0px;'>Sistema de Gestión de"
-    " Activos Físicos - QA/QC</h1>",
-    unsafe_allow_html=True,
-)
-st.markdown(
-    "<h4 style='color: #1E3A8A; margin-top: 5px;'><i>Control Operativo de"
-    " Inspectores e Histórico de Informes</i></h4>",
-    unsafe_allow_html=True,
-)
+st.markdown("<h1 style='color: #619b40; margin-bottom: 0px;'>Sistema de Gestión de Activos Físicos - QA/QC</h1>", unsafe_allow_html=True)
+st.markdown("<h4 style='color: #1E3A8A; margin-top: 5px;'><i>Control Operativo de Inspectores e Histórico de Informes</i></h4>", unsafe_allow_html=True)
 
 # 📸 Carga segura de la Franja Decorativa
 franja_bytes = obtener_bytes_franja()
@@ -477,7 +469,7 @@ menu = st.sidebar.radio(
     ]
 )
 
-# 🟢 PERSONAJE EN BASE64 CON POSICIONAMIENTO EN CENTÍMETROS LIBRE
+# 🟢 PERSONAJE EN BASE64 CON POSICIONAMIENTO LIBRE EN SIDEBAR
 personaje_bytes = obtener_bytes_personaje()
 if personaje_bytes:
     b64_img = base64.b64encode(personaje_bytes).decode("utf-8")
@@ -485,9 +477,9 @@ if personaje_bytes:
         f"""
         <style>
             .personaje-flotante {{
-                margin-top: 17cm;    /* ⬇️ AJUSTE VERTICAL: Aumenta para bajarlo o disminuye para subirlo */
-                margin-left: 0.7cm; /* ➡️ AJUSTE HORIZONTAL: Aumenta para moverlo a la derecha */
-                width: 200px;       /* 📐 Ancho de la imagen fijado en 200px */
+                margin-top: 5cm;    /* ⬇️ AJUSTE VERTICAL */
+                margin-left: 1.2cm; /* ➡️ AJUSTE HORIZONTAL */
+                width: 150px;       /* 📐 Ancho de la imagen */
                 display: block;
             }}
         </style>
@@ -630,6 +622,27 @@ elif menu == "📊 Historial e Informes":
                 df_informe = df_historial[df_historial['semana'] == semana_informe]
             else:
                 df_informe = pd.DataFrame()
+
+        # 📊 GRÁFICO AUTOMÁTICO DE AVANCE PROMEDIO POR INSPECTOR EN LA SEMANA
+        if tipo_reporte == "🗓️ Semanal" and not df_informe.empty:
+            st.markdown("---")
+            st.markdown(f"#### 📊 Porcentaje de Avance Promedio por Inspector ({semana_informe})")
+            
+            df_grafico = df_informe.copy()
+            if 'avance' in df_grafico.columns and 'inspector' in df_grafico.columns:
+                df_grafico['avance_num'] = pd.to_numeric(
+                    df_grafico['avance'].astype(str).str.replace('%', '').str.strip(),
+                    errors='coerce'
+                ).fillna(0)
+                
+                df_resumen_avance = df_grafico.groupby('inspector')['avance_num'].mean().reset_index()
+                df_resumen_avance.columns = ['Inspector', 'Avance Promedio (%)']
+                
+                st.bar_chart(
+                    data=df_resumen_avance.set_index('Inspector'),
+                    y='Avance Promedio (%)',
+                    color='#619b40'
+                )
 
         col_exp1, col_exp2 = st.columns(2)
         
