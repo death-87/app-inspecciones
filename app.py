@@ -7,8 +7,6 @@ import gspread
 import plotly.express as px
 from google.oauth2.service_account import Credentials
 from datetime import datetime
-import streamlit_authenticator as stauth
-import bcrypt
 
 # Librerías para generación de PDF
 from reportlab.lib.pagesizes import letter
@@ -36,64 +34,37 @@ st.set_page_config(
 )
 
 # =========================================================
-# SISTEMA DE SEGURIDAD (LOGIN MULTI-USUARIO)
+# SISTEMA DE SEGURIDAD SIMPLE (CONTRASEÑA ÚNICA DE ADMIN)
 # =========================================================
-credentials = {
-    "usernames": {
-        "admin": {
-            "name": "Administrador General",
-            "email": "admin@empresa.com",
-            "password": "$2b$12$kYn8Xq0v3m2Kq1Xz1Xz1Xe7x3m2Kq1Xz1Xz1Xe7x3m2Kq1Xz1Xz1X" # Contraseña temporal: admin123
-        },
-        "jnavarrete": {
-            "name": "Juan Navarrete",
-            "email": "juan@empresa.com",
-            "password": "$2b$12$4ZQXYCGonjQWZtvrWvZ9ZekBjV9tWkut7AOGSD04tbNFAxPrcosJu" # Contraseña temporal: juan123
-        },
-        "jhernandez": {
-            "name": "Jorge Hernandez",
-            "email": "jorge@empresa.com",
-            "password": "$2b$12$4ZQXYCGonjQWZtvrWvZ9ZekBjV9tWkut7AOGSD04tbNFAxPrcosJu" # Contraseña temporal: jorge2026
-        }
-    }
-}
+def check_password():
+    """Devuelve True si el usuario ingresó la contraseña correcta."""
+    def password_entered():
+        if st.session_state["password"] == st.secrets["password"]:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # Borra la contraseña de la memoria por seguridad
+        else:
+            st.session_state["password_correct"] = False
 
-authenticator = stauth.Authenticate(
-    credentials,
-    "cookie_inspecciones_qaqc",
-    "firma_super_secreta_123",
-    cookie_expiry_days=30
-)
+    if "password_correct" not in st.session_state:
+        st.markdown("<h2 style='text-align: center; color: #619b40;'>🔒 Acceso Restringido - Admin</h2>", unsafe_allow_html=True)
+        st.text_input("Ingresa la contraseña del administrador:", type="password", on_change=password_entered, key="password")
+        return False
+    elif not st.session_state["password_correct"]:
+        st.markdown("<h2 style='text-align: center; color: #619b40;'>🔒 Acceso Restringido - Admin</h2>", unsafe_allow_html=True)
+        st.text_input("Ingresa la contraseña del administrador:", type="password", on_change=password_entered, key="password")
+        st.error("❌ Contraseña incorrecta. Inténtalo de nuevo.")
+        return False
+    else:
+        return True
 
-# Mostrar formulario de inicio de sesión
-authenticator.login()
-
-if st.session_state["authentication_status"] is False:
-    st.error("❌ Usuario o contraseña incorrectos")
-    st.stop()
-elif st.session_state["authentication_status"] is None:
-    st.warning("⚠️ Por favor, ingresa tu usuario y contraseña para acceder al sistema.")
+# Si la contraseña no es correcta, detiene la app aquí
+if not check_password():
     st.stop()
 
-# =========================================================
-# (A PARTIR DE AQUÍ, LA SESIÓN ESTÁ INICIADA CORRECTAMENTE)
-# =========================================================
 
-# Botón de cerrar sesión y bienvenida en la barra lateral
-authenticator.logout("Cerrar Sesión", "sidebar")
-st.sidebar.markdown(f"👋 Hola, **{st.session_state['name']}**")
-st.sidebar.markdown("---")
-
-# Herramienta protegida: Generador de claves visible solo para el Admin y Juan
-if st.session_state["username"] in ["admin", "jnavarrete"]:
-    with st.sidebar.expander("🛠️ Generador de Claves Seguras"):
-        st.info("Escribe una clave para obtener su Hash real:")
-        clave_nueva = st.text_input("Nueva contraseña:", type="password")
-        if clave_nueva:
-            salt = bcrypt.gensalt()
-            hash_generado = bcrypt.hashpw(clave_nueva.encode('utf-8'), salt).decode('utf-8')
-            st.code(hash_generado)
-            st.warning("☝️ Copia este código para las credentials.")
+# =========================================================
+# A PARTIR DE AQUÍ FUNCIONA TU APLICACIÓN SANA Y NORMAL
+# =========================================================
 
 # 🔗 URLs RAW DE LOGO, FRANJA Y PERSONAJE EN GITHUB
 URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/logo.png"
@@ -140,8 +111,8 @@ def conectar_google_sheets():
         lines = [line.strip() for line in pk.split("\n") if line.strip()]
         creds_dict["private_key"] = "\n".join(lines) + "\n"
 
-    credentials_g = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-    client = gspread.authorize(credentials_g)
+    credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    client = gspread.authorize(credentials)
     return client.open_by_key(SPREADSHEET_ID)
 
 def obtener_hoja_actividades():
@@ -197,7 +168,6 @@ def dibujar_plantilla(canvas, doc):
     canvas.saveState()
     canvas.setFillColor(colors.HexColor("#f8faf6"))
     canvas.rect(0, 0, letter[0], letter[1], fill=1, stroke=0)
-
     canvas.setFillColor(colors.HexColor("#619b40"))
     canvas.rect(0, letter[1] - (2 * cm), letter[0], 2 * cm, fill=1, stroke=0)
 
@@ -233,8 +203,7 @@ def generar_pdf_informe(df_filtrado, titulo_doc, subtitulo_doc):
 
     if not df_filtrado.empty:
         inspectores_grupos = df_filtrado.groupby('inspector', sort=False)
-        total_grupos = len(inspectores_grupos)
-        for idx, (inspector_nom, group_df) in enumerate(inspectores_grupos):
+        for inspector_nom, group_df in inspectores_grupos:
             story.append(Paragraph(f"👷‍♂️ Inspector: <b>{inspector_nom}</b>", inspector_heading_style))
             table_data = [[Paragraph("Fecha / Planta", cell_header_style), Paragraph("Actividad Realizada", cell_header_style), Paragraph("Avance", cell_header_style), Paragraph("Estado", cell_header_style), Paragraph("Observaciones", cell_header_style)]]
             for _, row in group_df.iterrows():
