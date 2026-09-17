@@ -4,6 +4,7 @@ import requests
 import streamlit as st
 import pandas as pd
 import gspread
+import plotly.express as px
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 
@@ -623,7 +624,7 @@ elif menu == "📊 Historial e Informes":
             else:
                 df_informe = pd.DataFrame()
 
-        # 📊 GRÁFICO AUTOMÁTICO DE AVANCE PROMEDIO POR INSPECTOR EN LA SEMANA
+        # 📊 GRÁFICO AUTOMÁTICO CON ESCALA GRADUAL DE COLOR (0% Gris -> 100% Verde Institucional)
         if tipo_reporte == "🗓️ Semanal" and not df_informe.empty:
             st.markdown("---")
             st.markdown(f"#### 📊 Porcentaje de Avance Promedio por Inspector ({semana_informe})")
@@ -638,11 +639,39 @@ elif menu == "📊 Historial e Informes":
                 df_resumen_avance = df_grafico.groupby('inspector')['avance_num'].mean().reset_index()
                 df_resumen_avance.columns = ['Inspector', 'Avance Promedio (%)']
                 
-                st.bar_chart(
-                    data=df_resumen_avance.set_index('Inspector'),
+                # Definición de la paleta personalizada
+                # 0% Gris -> Azul grisáceo -> Azul -> Verde azulado -> Verde -> 100% Verde Institucional
+                escala_colores_custom = [
+                    [0.0, "#9CA3AF"],   # 0% Gris
+                    [0.2, "#64748B"],   # 20% Azul Grisáceo
+                    [0.4, "#2563EB"],   # 40% Azul
+                    [0.6, "#0D9488"],   # 60% Verde Azulado
+                    [0.8, "#16A34A"],   # 80% Verde
+                    [1.0, "#619b40"]    # 100% Verde Institucional
+                ]
+
+                fig = px.bar(
+                    df_resumen_avance,
+                    x='Inspector',
                     y='Avance Promedio (%)',
-                    color='#619b40'
+                    color='Avance Promedio (%)',
+                    color_continuous_scale=escala_colores_custom,
+                    range_color=[0, 100],
+                    text_auto='.1f',
+                    title=f"Avance Semanal - {semana_informe}"
                 )
+
+                fig.update_layout(
+                    yaxis=dict(range=[0, 105], title="Porcentaje (%)"),
+                    xaxis_title="Inspector",
+                    coloraxis_showscale=True,
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)"
+                )
+                
+                fig.update_traces(texttemplate='%{y:.1f}%', textposition='outside')
+                
+                st.plotly_chart(fig, use_container_width=True)
 
         col_exp1, col_exp2 = st.columns(2)
         
