@@ -31,9 +31,10 @@ st.set_page_config(
     layout="wide"
 )
 
-# 🔗 URLs RAW DE LOGO Y FRANJA EN GITHUB
+# 🔗 URLs RAW DE LOGO, FRANJA Y PERSONAJE EN GITHUB
 URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/logo.png"
-URL_FRANJA_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/franja.jpg"
+URL_FRANJA_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/franja.png"
+URL_PERSONAJE_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/personaje.png"
 
 # 🆔 ID DE TU HOJA DE GOOGLE SHEETS
 SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
@@ -57,6 +58,9 @@ def obtener_bytes_logo():
 
 def obtener_bytes_franja():
     return obtener_bytes_imagen(URL_FRANJA_GITHUB)
+
+def obtener_bytes_personaje():
+    return obtener_bytes_imagen(URL_PERSONAJE_GITHUB)
 
 # =========================================================
 # CONEXIÓN DIRECTA CON GOOGLE SHEETS VIA GSPREAD
@@ -433,7 +437,7 @@ semana_actual_num = datetime.now().isocalendar()[1]
 idx_semana_defecto = max(0, min(semana_actual_num - 1, len(LISTA_SEMANAS) - 1))
 
 # =========================================================
-# BARRA LATERAL (SIDEBAR CON LOGO DE REGRESO)
+# BARRA LATERAL (SIDEBAR CON LOGO Y PERSONAJE INFERIOR)
 # =========================================================
 logo_bytes_sidebar = obtener_bytes_logo()
 if logo_bytes_sidebar:
@@ -463,6 +467,12 @@ menu = st.sidebar.radio(
         "📈 Reporte Planificación"
     ]
 )
+
+# 🧍 Personaje en la parte inferior de la Sidebar
+personaje_bytes = obtener_bytes_personaje()
+if personaje_bytes:
+    st.sidebar.markdown("<br/>", unsafe_allow_html=True)
+    st.sidebar.image(personaje_bytes, use_container_width=True)
 
 # =========================================================
 # MÓDULO 1: REGISTRO DE ACTIVIDADES (ESCRITURA)
