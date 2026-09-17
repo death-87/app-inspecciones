@@ -6,3 +6,4 @@ reportlab
 python-docx
 requests
 plotly
+streamlit-authenticator
