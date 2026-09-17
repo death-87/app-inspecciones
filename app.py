@@ -67,7 +67,7 @@ def obtener_bytes_personaje():
 # =========================================================
 # CONEXIÓN DIRECTA CON GOOGLE SHEETS VIA GSPREAD
 # =========================================================
-import base64
+import textwrap
 
 def conectar_google_sheets():
     scopes = [
@@ -76,39 +76,24 @@ def conectar_google_sheets():
     ]
     creds_dict = dict(st.secrets["connections"]["gsheets"])
     
-    # Llave privada armada de forma interna en Python para evitar alteraciones en el portapapeles web
-    key_lines = [
-        "-----BEGIN PRIVATE KEY-----",
-        "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDNZx0g/q2grpYw",
-        "lJOwXRG/ThRIt+eHUg2tqvgBjN3DOf9KQEpWgeBQh3d0ArTqrXivLDFeW+cu9ZcW",
-        "XuzSZ49XT/Zh2FR++eZEY/9/Ii8CwzldF094wvLEqk2aNAOqxNwa1BG6xztQdcYr",
-        "9dnAdNQYtMISRKgasu0eCcw4WS4kme4qu5vCqc/mCHGxpfUVobH4uVwR45sXPNKI",
-        "Ie6KnjwymbDiJTSl8p+cCgZN2KmYJIDxLhVVd/TedhfT8iQ9t99NzljQCbhKUcib",
-        "DJDZQGbKCC/mg7cGpUlci7NaFRkd2El4HpDZdj9Ho4iCT3a9skrvs5x0d2QGoZ0Z",
-        "lPFKhy7VAgMBAAECggEAQT315iOO4eFiija/PH8rYnD6B2kGrRhWiOmr0c49KEQV",
-        "Py/xjM2/AsUsn5g2f+4uzbFDUx3s7iEK5wuqvGAxiwG2mDifCh/1UJbUsjyY4w9A",
-        "er2rPAfsFaSkdoz79zOFWC4xHXsn73QhSJhUHInfTqOnmybcoHJh1680A1fsTKpY",
-        "a2rRF3P9N9UMmWPcIpHd9rh8oimcejUavXt06P9w0z6CQrloDyM4LGBwFDhvlzqb",
-        "MGz6H34igVJe3Xo2RKMA5Dq8SrxccvXj8FAvspnrAuC2kF3tw+L1+lzsdwZVlwtC",
-        "cBeInEymPozmwocFsirAE6JQRhcTM7jZlBzdUWszZwKBgQDmuOG8hpa9AOn9x/1d",
-        "Jjlw1+kTYw/q8z+iRthYIjF1tiSNt/Im9RsyV8idRfRfuCtx0Y6npqAzJj+nhI4C",
-        "3pVe23W3Zq2ElYOI5FfsNem9VOh0p7jnpqmWgythjY5WL9t3qI5R909/J5huMOyh",
-        "72CppFo5ZNb5YhujMlR3WLUIUwKBgQDj6BfC4nVc6yEdusLJrNBbJLTeEf0B5LJZ",
-        "nnKcNnMRKJUX8rPL0AYmCaWf9TIhSHl7FKdDSkDYslUHeClMxba4NXzvQ8YVir8P2",
-        "gGcOKC3uBvTOYtNE+FbtJ+MyP8wlHiw44bJ2T/Ag8C8k7P6Zr/sDP7K+sbP3eZjF",
-        "Fx26uHNnNwKBgCFmHA9dcE615il9nNiyItiJ+Mx8p548TjbgiIrhkEVY85usSBqJ",
-        "nmsFD4d+ac9CzaV6VllAAl+ovnEFUt/YEYJ0Vqcm9zFqIBj13yJ6CA28L7oaMjQDD",
-        "nqIMIQ+xgQH2LefqtZMTKxzBB/BffbzHV5ClKiGEMju4U3KlYLNAGAFbPAoGAEQ+M",
-        "x9AADSak4f7bGhHPvyLuTzl1gTDHkSHC96fmoc5MgO/JeC6tRo/xcurJwav4WDYb",
-        "JcgZ5hh+R8rqE2csgl/AsJGD9LFHsCpIjKzBU3I93T1Up3MXvsUfouFXvOeXU+LB",
-        "Y030oeKZBOCg5oxf9AxOqyvOVxZJM2fZl+K68N0CgYEApK4LBmKVAKqFt7Z6aubS",
-        "Wg0HvTrlktoB3GO3/7mVBvddgysnyOYBX4Qp2zPXyqlmxf/x2t4NwWG50X4uXE83",
-        "AB7h53j+6tRDANtelnvUZZNU/K02ofssS9avnWoDsNExRBMDrbHjg4esrVcaKNqD",
-        "BJOV7jsh5i2ujnmzAcsq5ZA=",
-        "-----END PRIVATE KEY-----"
-    ]
-    creds_dict["private_key"] = "\n".join(key_lines) + "\n"
+    # 1. Extraemos la llave privada guardada en los secrets
+    pk_raw = creds_dict.get("private_key", "")
+    
+    # 2. Limpiamos cualquier residuo, saltos de línea mal puestos o etiquetas previas
+    clean_base64 = (pk_raw.replace("-----BEGIN PRIVATE KEY-----", "")
+                          .replace("-----END PRIVATE KEY-----", "")
+                          .replace("\\n", "")
+                          .replace("\n", "")
+                          .strip())
+    
+    # 3. Forzamos a Python a dividirla exactamente en líneas de 64 caracteres (lo que exige cryptography)
+    wrapped_lines = textwrap.wrap(clean_base64, 64)
+    
+    # 4. Reconstruimos el formato PEM perfecto
+    formatted_pk = "-----BEGIN PRIVATE KEY-----\n" + "\n".join(wrapped_lines) + "\n-----END PRIVATE KEY-----\n"
+    creds_dict["private_key"] = formatted_pk
 
+    # Autenticación limpia
     credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     client = gspread.authorize(credentials)
     return client.open_by_key(SPREADSHEET_ID)
