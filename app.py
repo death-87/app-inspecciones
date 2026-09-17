@@ -477,9 +477,9 @@ if personaje_bytes:
         f"""
         <style>
             .personaje-flotante {{
-                margin-top: 5cm;    /* ⬇️ AJUSTE VERTICAL: Aumenta para bajarlo o disminuye para subirlo */
+                margin-top: 20cm;    /* ⬇️ AJUSTE VERTICAL: Aumenta para bajarlo o disminuye para subirlo */
                 margin-left: 1.2cm; /* ➡️ AJUSTE HORIZONTAL: Aumenta para moverlo a la derecha */
-                width: 150px;       /* 📐 Ancho de la imagen fijado en 150px */
+                width: 200px;       /* 📐 Ancho de la imagen fijado en 200px */
                 display: block;
             }}
         </style>
