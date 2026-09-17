@@ -45,8 +45,8 @@ SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 # GESTIÓN DE AUTENTICACIÓN Y ROLES DE USUARIO
 # =========================================================
 USUARIOS_SISTEMA = {
-    "invitado": {"password": "123", "rol": "invitado", "nombre": "Visitante / Solo Lectura"},
-    "inspector": {"password": "jorge2026", "rol": "operador", "jhernandez": "Inspector (Agregar Datos)"},
+    "invitado": {"password": "123", "rol": "invitado", "visitante": "Visitante / Solo Lectura"},
+    "inspector": {"password": "jorge2026", "rol": "jhernandez", "jhernandez": "Inspector (Agregar Datos)"},
     "admin": {"password": "Mechanix123", "rol": "admin", "jnavarrete": "Administrador General"}
 }
 
