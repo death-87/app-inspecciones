@@ -798,48 +798,20 @@ elif menu == "📈 Reporte Planificación":
         st.info("ℹ️ Aún no hay registros de planificación guardados.")
 
 # =========================================================
-# PIE DE PÁGINA (LOGO Y FRANJA COMPLETA EN EL SECTOR INFERIOR)
+# PIE DE PÁGINA (LOGO Y FRANJA EN EL SECTOR INFERIOR)
 # =========================================================
 st.markdown("<br/><br/>", unsafe_allow_html=True)
 
-# Logo centrado arriba de la franja final
+# Logo centrado en el pie de página
 col_foot1, col_foot2, col_foot3 = st.columns([2, 1, 2])
 with col_foot2:
     logo_footer_bytes = obtener_bytes_logo()
     if logo_footer_bytes:
         st.image(logo_footer_bytes, width=150)
 
-# 📸 FRANJA INFERIOR FORZADA AL 100% DEL ANCHO SIN RECORTES DE STREAMLIT
+# 📸 FRANJA INFERIOR AJUSTADA EXACTAMENTE AL ANCHO DEL CONTENEDOR
 franja_footer_bytes = obtener_bytes_franja()
 if franja_footer_bytes:
-    b64_franja = base64.b64encode(franja_footer_bytes).decode("utf-8")
-    st.markdown(
-        f"""
-        <style>
-            /* Anular restricciones del contenedor interno de Streamlit */
-            .stApp > header + div, [data-testid="stAppViewMain"] {{
-                overflow-x: hidden !important;
-            }}
-            .franja-footer-container {{
-                position: relative;
-                width: 100vw !important;
-                left: 50% !important;
-                transform: translateX(-50%) !important;
-                margin-top: 25px !important;
-                padding: 0 !important;
-                overflow: hidden !important;
-                line-height: 0 !important;
-            }}
-            .franja-footer-container img {{
-                width: 100% !important;
-                height: 14px !important;
-                object-fit: cover !important;
-                display: block !important;
-            }}
-        </style>
-        <div class="franja-footer-container">
-            <img src="data:image/png;base64,{b64_franja}" />
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    st.image(franja_footer_bytes, use_container_width=True)
+else:
+    st.markdown("<hr style='border: 2px solid #619b40;'/>", unsafe_allow_html=True)
