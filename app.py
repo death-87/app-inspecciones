@@ -46,8 +46,9 @@ SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 # =========================================================
 USUARIOS_SISTEMA = {
     "invitado": {"password": "123", "rol": "invitado", "nombre": "Visitante / Solo Lectura"},
+    "jnavarrete": {"password": "Mechanix123", "rol": "operador", "nombre": "jnavarrete (Agregar Datos)"},
     "jhernandez": {"password": "jorge2026", "rol": "operador", "nombre": "jhernandez (Agregar Datos)"},
-    "admin": {"password": "Mechanix123", "rol": "admin", "jnavarrete": "Administrador General"}
+    "admin": {"password": "Mechanix123", "rol": "admin", "nombre": "Administrador General"}
 }
 
 if "autenticado" not in st.session_state:
