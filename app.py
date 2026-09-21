@@ -175,6 +175,20 @@ def cargar_datos_planificacion():
         st.error(f"Error al leer la hoja de Planificación: {e}")
         return pd.DataFrame()
 
+def obtener_ultimo_registro_tag(tag_busqueda):
+    """Busca el registro más reciente de un TAG en el historial de actividades."""
+    df_historial = cargar_datos_sheets()
+    if df_historial.empty or "tag_equipo" not in df_historial.columns:
+        return None
+    
+    # Filtrar coincidentes sin importar mayúsculas/minúsculas
+    df_tag = df_historial[df_historial['tag_equipo'].astype(str).str.upper() == tag_busqueda.strip().upper()]
+    
+    if not df_tag.empty:
+        # Retorna el último registro ingresado (última fila)
+        return df_tag.iloc[-1].to_dict()
+    return None
+
 # =========================================================
 # DISEÑO DE PLANTILLA (FONDO, CABECERA Y PIE PARA PDF)
 # =========================================================
@@ -544,7 +558,7 @@ if personaje_bytes:
 rol_usuario = st.session_state.rol_actual
 
 # =========================================================
-# MÓDULO 1: REGISTRO DE ACTIVIDADES (ESCRITURA)
+# MÓDULO 1: REGISTRO DE ACTIVIDADES (ESCRITURA CON REUTILIZACIÓN)
 # =========================================================
 if menu == "📝 Registrar Actividad por Inspector":
     st.subheader("📋 Formulario de Ingreso de Actividades")
@@ -552,24 +566,79 @@ if menu == "📝 Registrar Actividad por Inspector":
     if rol_usuario == "invitado":
         st.warning("⚠️ Tu cuenta actual es de **Visitante (Solo Lectura)**. No tienes permisos para registrar actividades. Por favor inicia sesión con un usuario autorizado en la barra lateral.")
     
+    # 🔄 SECCIÓN PARA CONTINUAR TRABAJOS PENDIENTES
+    st.markdown("##### 🔄 CONTINUAR UNA ACTIVIDAD PENDIENTE")
+    col_retoma1, col_retoma2 = st.columns([3, 1])
+    
+    with col_retoma1:
+        tag_para_retomar = st.text_input("Buscar TAG para continuar trabajo pendiente:", placeholder="Ej: C-1302")
+    
+    with col_retoma2:
+        st.markdown("<br/>", unsafe_allow_html=True)
+        btn_cargar_tag = st.button("🔎 Cargar Datos Últimos")
+    
+    # Valores por defecto para el formulario
+    def_inspector = LISTA_INSPECTORES[0]
+    def_planta = LISTA_PLANTAS[0]
+    def_tag = ""
+    def_avance = 0
+    def_actividad = ""
+    def_obs = ""
+    def_estado = ESTADOS_LIBERACION[3] # "En Proceso de Inspección" por defecto
+
+    if btn_cargar_tag and tag_para_retomar:
+        ultimo_reg = obtener_ultimo_registro_tag(tag_para_retomar)
+        if ultimo_reg:
+            # Obtener el entero del porcentaje guardado (ej: "45%" -> 45)
+            avance_str = str(ultimo_reg.get("avance", "0")).replace("%", "").strip()
+            avance_val = int(float(avance_str)) if avance_str.replace('.', '', 1).isdigit() else 0
+            
+            if avance_val >= 100:
+                st.info(f"ℹ️ El TAG **{tag_para_retomar}** ya figura completado al 100%. Se cargarán sus datos base como referencia.")
+            else:
+                st.success(f"✅ Último registro cargado para **{tag_para_retomar}** (Avance previo: {avance_val}%). Puedes actualizar el progreso y guardar la nueva jornada.")
+
+            def_tag = str(ultimo_reg.get("tag_equipo", tag_para_retomar))
+            def_actividad = str(ultimo_reg.get("actividad_realizada", ""))
+            def_obs = f"Continuación de inspección anterior. Obs previas: {ultimo_reg.get('observaciones', '')}"
+            def_avance = avance_val
+            
+            if ultimo_reg.get("inspector") in LISTA_INSPECTORES:
+                def_inspector = ultimo_reg.get("inspector")
+            if ultimo_reg.get("planta") in LISTA_PLANTAS:
+                def_planta = ultimo_reg.get("planta")
+            if ultimo_reg.get("estado_liberacion") in ESTADOS_LIBERACION:
+                def_estado = ultimo_reg.get("estado_liberacion")
+        else:
+            st.warning(f"⚠️ No se encontraron registros anteriores para el TAG '{tag_para_retomar}'. Se creará uno desde cero.")
+            def_tag = tag_para_retomar
+
+    st.markdown("---")
+
+    # 📝 FORMULARIO DE INGRESO
     with st.form("form_actividades_inspector", clear_on_submit=True):
         col1, col2 = st.columns(2)
         
         with col1:
-            inspector_seleccionado = st.selectbox("👷‍♂️ Seleccionar Inspector asignado:", LISTA_INSPECTORES)
+            idx_insp = LISTA_INSPECTORES.index(def_inspector) if def_inspector in LISTA_INSPECTORES else 0
+            idx_plan = LISTA_PLANTAS.index(def_planta) if def_planta in LISTA_PLANTAS else 0
+            
+            inspector_seleccionado = st.selectbox("👷‍♂️ Seleccionar Inspector asignado:", LISTA_INSPECTORES, index=idx_insp)
             fecha_actividad = st.date_input("📅 Fecha de Inspección:", datetime.now())
             semana_seleccionada = st.selectbox("🗓️ Semana Operativa:", LISTA_SEMANAS, index=idx_semana_defecto)
-            planta_seleccionada = st.selectbox("🏭 Planta / Unidad:", LISTA_PLANTAS)
+            planta_seleccionada = st.selectbox("🏭 Planta / Unidad:", LISTA_PLANTAS, index=idx_plan)
 
         with col2:
-            tag_equipo = st.text_input("🏷️ TAG del Equipo / Línea Piping:", placeholder="Ej: C-1302 / E-2101 / PIP-001")
-            porcentaje_avance = st.slider("📊 Porcentaje de Avance:", min_value=0, max_value=100, value=0, step=5, format="%d%%")
-            estado_liberacion = st.selectbox("📌 Estado de la Inspección:", ESTADOS_LIBERACION)
+            tag_equipo = st.text_input("🏷️ TAG del Equipo / Línea Piping:", value=def_tag, placeholder="Ej: C-1302 / E-2101 / PIP-001")
+            porcentaje_avance = st.slider("📊 Porcentaje de Avance Acumulado:", min_value=0, max_value=100, value=def_avance, step=5, format="%d%%")
+            
+            idx_est = ESTADOS_LIBERACION.index(def_estado) if def_estado in ESTADOS_LIBERACION else 0
+            estado_liberacion = st.selectbox("📌 Estado de la Inspección:", ESTADOS_LIBERACION, index=idx_est)
 
-        actividad_realizada = st.text_area("🛠️ Actividades Realizadas por el Inspector:", placeholder="Ej: Inspección visual de junta...")
-        observaciones = st.text_area("💬 Observaciones Adicionales / Recomendaciones:", placeholder="Escribe comentarios extra...")
+        actividad_realizada = st.text_area("🛠️ Actividades Realizadas en esta jornada:", value=def_actividad, placeholder="Ej: Inspección visual de junta...")
+        observaciones = st.text_area("💬 Observaciones Adicionales / Recomendaciones:", value=def_obs, placeholder="Escribe comentarios extra...")
         
-        btn_guardar = st.form_submit_button("☁️ Guardar Registro en Google Sheets")
+        btn_guardar = st.form_submit_button("☁️ Guardar Nuevo Registro en Google Sheets")
         
         if btn_guardar:
             if rol_usuario == "invitado":
@@ -584,6 +653,7 @@ if menu == "📝 Registrar Actividad por Inspector":
                             "actividad_realizada", "avance", "observaciones", "estado_liberacion"
                         ])
                     
+                    # 💡 SE CREA UNA NUEVA FILA (INDEPENDIENTE Y AUDITABLE)
                     nueva_fila = [
                         str(fecha_actividad),
                         semana_seleccionada,
@@ -596,7 +666,7 @@ if menu == "📝 Registrar Actividad por Inspector":
                         estado_liberacion
                     ]
                     sheet.append_row(nueva_fila)
-                    st.success(f"✅ ¡Actividad de **{inspector_seleccionado}** (Planta: {planta_seleccionada} | TAG: {tag_equipo}) guardada con éxito!")
+                    st.success(f"✅ ¡Nuevo registro de **{inspector_seleccionado}** (TAG: {tag_equipo} | Avance: {porcentaje_avance}%) guardado con éxito!")
                 except Exception as ex:
                     st.error(f"❌ Ocurrió un error al guardar en la nube: {ex}")
             else:
