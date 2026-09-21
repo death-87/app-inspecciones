@@ -127,6 +127,7 @@ def obtener_hoja_planificacion():
         ])
         return ws
 
+@st.cache_data(ttl=60)
 def cargar_datos_sheets():
     """Lee todas las filas almacenadas en la Hoja de Actividades."""
     try:
@@ -151,6 +152,7 @@ def cargar_datos_sheets():
             "actividad_realizada", "avance", "observaciones", "estado_liberacion"
         ])
 
+@st.cache_data(ttl=60)
 def cargar_datos_planificacion():
     """Lee todas las filas almacenadas en la Hoja de Planificación."""
     try:
@@ -589,7 +591,6 @@ if menu == "📝 Registrar Actividad por Inspector":
     if btn_cargar_tag and tag_para_retomar:
         ultimo_reg = obtener_ultimo_registro_tag(tag_para_retomar)
         if ultimo_reg:
-            # Obtener el entero del porcentaje guardado (ej: "45%" -> 45)
             avance_str = str(ultimo_reg.get("avance", "0")).replace("%", "").strip()
             avance_val = int(float(avance_str)) if avance_str.replace('.', '', 1).isdigit() else 0
             
@@ -653,7 +654,6 @@ if menu == "📝 Registrar Actividad por Inspector":
                             "actividad_realizada", "avance", "observaciones", "estado_liberacion"
                         ])
                     
-                    # 💡 SE CREA UNA NUEVA FILA (INDEPENDIENTE Y AUDITABLE)
                     nueva_fila = [
                         str(fecha_actividad),
                         semana_seleccionada,
@@ -666,7 +666,11 @@ if menu == "📝 Registrar Actividad por Inspector":
                         estado_liberacion
                     ]
                     sheet.append_row(nueva_fila)
+                    
+                    # 🔄 LIMPIAR CACHÉ Y FORZAR RECARGA DE DATOS EN TODA LA APP
+                    st.cache_data.clear()
                     st.success(f"✅ ¡Nuevo registro de **{inspector_seleccionado}** (TAG: {tag_equipo} | Avance: {porcentaje_avance}%) guardado con éxito!")
+                    st.rerun()
                 except Exception as ex:
                     st.error(f"❌ Ocurrió un error al guardar en la nube: {ex}")
             else:
@@ -907,7 +911,11 @@ elif menu == "📈 Reporte Planificación":
                         p_observaciones.strip()
                     ]
                     ws_plan.append_row(nueva_fila_plan)
+                    
+                    # 🔄 LIMPIAR CACHÉ Y FORZAR RECARGA
+                    st.cache_data.clear()
                     st.success("✅ ¡Datos de planificación guardados con éxito en la pestaña 'Planificacion' de Google Sheets!")
+                    st.rerun()
                 except Exception as ex:
                     st.error(f"❌ Error al guardar planificación: {ex}")
 
