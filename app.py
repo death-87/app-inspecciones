@@ -127,9 +127,8 @@ def obtener_hoja_planificacion():
         ])
         return ws
 
-@st.cache_data(ttl=60)
 def cargar_datos_sheets():
-    """Lee todas las filas almacenadas en la Hoja de Actividades."""
+    """Lee todas las filas almacenadas en la Hoja de Actividades en tiempo real."""
     try:
         sheet = obtener_hoja_actividades()
         filas = sheet.get_all_values()
@@ -152,9 +151,8 @@ def cargar_datos_sheets():
             "actividad_realizada", "avance", "observaciones", "estado_liberacion"
         ])
 
-@st.cache_data(ttl=60)
 def cargar_datos_planificacion():
-    """Lee todas las filas almacenadas en la Hoja de Planificación."""
+    """Lee todas las filas almacenadas en la Hoja de Planificación en tiempo real."""
     try:
         sheet = obtener_hoja_planificacion()
         filas = sheet.get_all_values()
@@ -667,10 +665,9 @@ if menu == "📝 Registrar Actividad por Inspector":
                     ]
                     sheet.append_row(nueva_fila)
                     
-                    # 🔄 LIMPIAR CACHÉ Y FORZAR RECARGA DE DATOS EN TODA LA APP
+                    # Limpieza de caché
                     st.cache_data.clear()
-                    st.success(f"✅ ¡Nuevo registro de **{inspector_seleccionado}** (TAG: {tag_equipo} | Avance: {porcentaje_avance}%) guardado con éxito!")
-                    st.rerun()
+                    st.success(f"✅ ¡Nuevo registro de **{inspector_seleccionado}** (TAG: {tag_equipo} | Avance: {porcentaje_avance}%) guardado con éxito en Google Sheets!")
                 except Exception as ex:
                     st.error(f"❌ Ocurrió un error al guardar en la nube: {ex}")
             else:
@@ -912,10 +909,9 @@ elif menu == "📈 Reporte Planificación":
                     ]
                     ws_plan.append_row(nueva_fila_plan)
                     
-                    # 🔄 LIMPIAR CACHÉ Y FORZAR RECARGA
+                    # Limpieza de caché
                     st.cache_data.clear()
                     st.success("✅ ¡Datos de planificación guardados con éxito en la pestaña 'Planificacion' de Google Sheets!")
-                    st.rerun()
                 except Exception as ex:
                     st.error(f"❌ Error al guardar planificación: {ex}")
 
