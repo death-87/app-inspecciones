@@ -5,29 +5,43 @@ import datetime
 # Configuración de la página
 st.set_page_config(page_title="KPIs de Inspección", page_icon="📊", layout="wide")
 
-# 1. INICIALIZACIÓN DE DATOS (Estructura base para los 5 inspectores)
+# ==========================================
+# 1. LISTA OFICIAL DE INSPECTORES
+# ==========================================
+# Copia aquí exactamente los mismos 5 nombres que tienes en tu app.py 
+# en la opción "Seleccionar Inspector asignado"
+INSPECTORES_OFICIALES = [
+    "Juan Navarrete", 
+    "Jorge Hernandez", 
+    "Arlem Sarmiento", 
+    "Harold Castillo", 
+    "Miguel Chirinos"
+]
+
+# ==========================================
+# 2. INICIALIZACIÓN DE DATOS BASE
+# ==========================================
+# Base de datos temporal en memoria (session_state)
 if "inspecciones_data" not in st.session_state:
     st.session_state.inspecciones_data = pd.DataFrame([
-        {"Fecha": "2026-09-15", "Semana": 38, "Inspector": "Inspector 1", "Equipo_TAG": "C701", "Horas": 4.0, "Estado": "Conforme", "Hallazgos": 0},
-        {"Fecha": "2026-09-15", "Semana": 38, "Inspector": "Inspector 2", "Equipo_TAG": "C702", "Horas": 3.5, "Estado": "Con Hallazgos", "Hallazgos": 2},
-        {"Fecha": "2026-09-16", "Semana": 38, "Inspector": "Inspector 3", "Equipo_TAG": "E101", "Horas": 5.0, "Estado": "Conforme", "Hallazgos": 0},
-        {"Fecha": "2026-09-16", "Semana": 38, "Inspector": "Inspector 4", "Equipo_TAG": "E102", "Horas": 2.5, "Estado": "Rechazado", "Hallazgos": 3},
-        {"Fecha": "2026-09-17", "Semana": 38, "Inspector": "Inspector 5", "Equipo_TAG": "C701", "Horas": 4.5, "Estado": "Conforme", "Hallazgos": 0},
-        {"Fecha": "2026-09-18", "Semana": 38, "Inspector": "Inspector 1", "Equipo_TAG": "T101", "Horas": 3.0, "Estado": "Conforme", "Hallazgos": 0},
-        {"Fecha": "2026-09-18", "Semana": 38, "Inspector": "Inspector 2", "Equipo_TAG": "T102", "Horas": 4.0, "Estado": "Con Hallazgos", "Hallazgos": 1},
+        {"Fecha": "2026-09-15", "Semana": 38, "Inspector": INSPECTORES_OFICIALES[0], "Equipo_TAG": "C701", "Horas": 4.0, "Estado": "Conforme", "Hallazgos": 0},
+        {"Fecha": "2026-09-15", "Semana": 38, "Inspector": INSPECTORES_OFICIALES[1], "Equipo_TAG": "C702", "Horas": 3.5, "Estado": "Con Hallazgos", "Hallazgos": 2},
+        {"Fecha": "2026-09-16", "Semana": 38, "Inspector": INSPECTORES_OFICIALES[2], "Equipo_TAG": "E101", "Horas": 5.0, "Estado": "Conforme", "Hallazgos": 0},
+        {"Fecha": "2026-09-16", "Semana": 38, "Inspector": INSPECTORES_OFICIALES[3], "Equipo_TAG": "E102", "Horas": 2.5, "Estado": "Rechazado", "Hallazgos": 3},
+        {"Fecha": "2026-09-17", "Semana": 38, "Inspector": INSPECTORES_OFICIALES[4], "Equipo_TAG": "C701", "Horas": 4.5, "Estado": "Conforme", "Hallazgos": 0}
     ])
 
 st.title("📊 Control de Actividades e Indicadores de Inspección (KPIs)")
 
-# 2. BARRA LATERAL: REGISTRO DE DATOS Y FILTROS
+# ==========================================
+# 3. BARRA LATERAL: REGISTRO Y FILTROS
+# ==========================================
 st.sidebar.header("📝 Registro de Trabajo Semanal")
-
-inspectores_lista = ["Inspector 1", "Inspector 2", "Inspector 3", "Inspector 4", "Inspector 5"]
 
 with st.sidebar.form("form_registro_inspeccion"):
     fecha = st.date_input("Fecha de Inspección", datetime.date.today())
-    inspector = st.selectbox("Inspector", inspectores_lista)
-    semana = st.number_input("Semana Nº", min_value=1, max_value=53, value=38)
+    inspector = st.selectbox("Seleccionar Inspector asignado", INSPECTORES_OFICIALES)
+    semana = st.number_input("Semana Nº", min_value=1, max_value=53, value=datetime.date.today().isocalendar()[1])
     equipo = st.text_input("TAG de Equipo", value="C701")
     horas = st.number_input("Horas Invertidas", min_value=0.5, max_value=24.0, value=4.0, step=0.5)
     estado = st.selectbox("Estado de Inspección", ["Conforme", "Con Hallazgos", "Rechazado"])
@@ -53,15 +67,19 @@ st.sidebar.divider()
 st.sidebar.header("🔍 Filtros del Dashboard")
 semanas_avail = sorted(st.session_state.inspecciones_data["Semana"].unique())
 filtro_semana = st.sidebar.multiselect("Filtrar por Semana", options=semanas_avail, default=semanas_avail)
-filtro_inspector = st.sidebar.multiselect("Filtrar por Inspector", options=inspectores_lista, default=inspectores_lista)
+filtro_inspector = st.sidebar.multiselect("Filtrar por Inspector", options=INSPECTORES_OFICIALES, default=INSPECTORES_OFICIALES)
 
-# Aplicar filtros a los datos
+# ==========================================
+# 4. APLICACIÓN DE FILTROS A LA DATA
+# ==========================================
 df_filtrado = st.session_state.inspecciones_data[
     (st.session_state.inspecciones_data["Semana"].isin(filtro_semana)) &
     (st.session_state.inspecciones_data["Inspector"].isin(filtro_inspector))
 ]
 
-# 3. METRICAS / KPIS PRINCIPALES
+# ==========================================
+# 5. TARJETAS DE KPIS PRINCIPALES
+# ==========================================
 col1, col2, col3, col4 = st.columns(4)
 
 total_insp = len(df_filtrado)
@@ -77,7 +95,9 @@ col4.metric("Tasa de No Conformidad", f"{tasa_rechazo:.1f}%", delta_color="inver
 
 st.divider()
 
-# 4. GRÁFICOS COMPARATIVOS ENTRE INSPECTORES
+# ==========================================
+# 6. GRÁFICOS COMPARATIVOS ENTRE INSPECTORES
+# ==========================================
 if not df_filtrado.empty:
     col_g1, col_g2 = st.columns(2)
 
@@ -94,11 +114,13 @@ if not df_filtrado.empty:
 
     st.divider()
 
-    # 5. TABLA REGISTRO GENERAL Y DESCARGA
+    # ==========================================
+    # 7. TABLA DETALLADA Y EXPORTACIÓN A EXCEL/CSV
+    # ==========================================
     st.subheader("📋 Registro Detallado de Actividades")
     st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
 
-    # Botón para exportar reporte
+    # Botón de descarga
     csv_data = df_filtrado.to_csv(index=False).encode('utf-8')
     st.download_button(
         label="📥 Descargar Reporte en CSV",
@@ -107,4 +129,4 @@ if not df_filtrado.empty:
         mime="text/csv"
     )
 else:
-    st.warning("No hay datos disponibles para los filtros seleccionados.")
+    st.warning("No hay datos disponibles para los filtros seleccionados. Intenta modificar la semana o los inspectores en el panel izquierdo.")
