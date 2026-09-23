@@ -9,6 +9,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import date, datetime
 from io import BytesIO
+from PIL import Image as PILImage
 
 # Librerías para generación de Word
 from docx import Document
@@ -112,7 +113,7 @@ def obtener_o_crear_hoja_historial():
     try:
         ws = client.worksheet("HISTORIAL_INFORMES")
     except Exception:
-        ws = client.add_worksheet(title="HISTORIAL_INFORMES", rows="100", cols="20")
+        ws = client.add_worksheet(title="HISTORIAL_INFORMES", rows="1000", cols="20")
         ws.append_row([
             "num_informe", "ot", "fecha", "unidad", "tag", 
             "descripcion", "aca", "motivo", "alcance", 
@@ -120,16 +121,30 @@ def obtener_o_crear_hoja_historial():
         ])
     return ws
 
+def optimizar_imagen_bytes(img_bytes, max_size=(800, 800), calidad=60):
+    """Comprime la imagen para reducir su peso en Base64 y evitar sobrepasar límites de Google Sheets."""
+    try:
+        img = PILImage.open(BytesIO(img_bytes))
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        img.thumbnail(max_size, PILImage.Resampling.LANCZOS)
+        out = BytesIO()
+        img.save(out, format="JPEG", quality=calidad, optimize=True)
+        return out.getvalue()
+    except Exception:
+        return img_bytes
+
 def serializar_imagenes(imagenes_procesadas):
-    """Convierte las imágenes procesadas (bytes, pie) a una cadena JSON en Base64."""
+    """Comprime y convierte las imágenes procesadas a Base64 JSON."""
     fotos_data = []
     for img_bytes, pie in imagenes_procesadas:
-        b64_str = base64.b64encode(img_bytes).decode('utf-8')
+        img_comprimida = optimizar_imagen_bytes(img_bytes)
+        b64_str = base64.b64encode(img_comprimida).decode('utf-8')
         fotos_data.append({"b64": b64_str, "pie": pie})
     return json.dumps(fotos_data, ensure_ascii=False)
 
 def deserializar_imagenes(fotos_json_str):
-    """Decodifica la cadena JSON con imágenes en Base64 de vuelta a (bytes, pie)."""
+    """Decodifica la cadena JSON de vuelta a bytes y pie."""
     if not fotos_json_str:
         return []
     try:
@@ -143,48 +158,51 @@ def deserializar_imagenes(fotos_json_str):
         return []
 
 def guardar_resguardo_informe(datos_encabezado, secciones_dinamicas, imagenes_procesadas, inspector_firma):
-    """Guarda o actualiza un informe completo con fotos en la hoja HISTORIAL_INFORMES."""
-    ws = obtener_o_crear_hoja_historial()
-    num_inf = datos_encabezado['num_informe'].strip()
-    
-    if not num_inf:
-        return False, "Debe ingresar un N.º DE INFORME para poder resguardar."
+    """Guarda o actualiza un informe en Google Sheets."""
+    try:
+        ws = obtener_o_crear_hoja_historial()
+        num_inf = datos_encabezado['num_informe'].strip()
+        
+        if not num_inf:
+            return False, "Debe ingresar un N.º DE INFORME para poder resguardar."
 
-    filas = ws.get_all_values()
-    secciones_serializables = {str(k): v for k, v in secciones_dinamicas.items()}
-    secciones_json = json.dumps(secciones_serializables, ensure_ascii=False)
-    fotos_json = serializar_imagenes(imagenes_procesadas)
-    
-    fila_nueva = [
-        num_inf,
-        str(datos_encabezado['ot']),
-        datos_encabezado['fecha'].strftime("%Y-%m-%d"),
-        str(datos_encabezado['unidad']),
-        str(datos_encabezado['tag']),
-        str(datos_encabezado['descripcion']),
-        str(datos_encabezado['aca']),
-        str(datos_encabezado['motivo']),
-        str(datos_encabezado['alcance']),
-        secciones_json,
-        str(inspector_firma),
-        fotos_json
-    ]
+        filas = ws.get_all_values()
+        secciones_serializables = {str(k): v for k, v in secciones_dinamicas.items()}
+        secciones_json = json.dumps(secciones_serializables, ensure_ascii=False)
+        fotos_json = serializar_imagenes(imagenes_procesadas)
+        
+        fila_nueva = [
+            num_inf,
+            str(datos_encabezado['ot']),
+            datos_encabezado['fecha'].strftime("%Y-%m-%d"),
+            str(datos_encabezado['unidad']),
+            str(datos_encabezado['tag']),
+            str(datos_encabezado['descripcion']),
+            str(datos_encabezado['aca']),
+            str(datos_encabezado['motivo']),
+            str(datos_encabezado['alcance']),
+            secciones_json,
+            str(inspector_firma),
+            fotos_json
+        ]
 
-    fila_idx = None
-    for idx, f in enumerate(filas[1:], start=2):
-        if len(f) > 0 and f[0].strip().upper() == num_inf.upper():
-            fila_idx = idx
-            break
+        fila_idx = None
+        for idx, f in enumerate(filas[1:], start=2):
+            if len(f) > 0 and f[0].strip().upper() == num_inf.upper():
+                fila_idx = idx
+                break
 
-    if fila_idx:
-        ws.update(f"A{fila_idx}:L{fila_idx}", [fila_nueva])
-        mensaje = f"✅ Informe '{num_inf}' actualizado correctamente con imágenes en Google Sheets."
-    else:
-        ws.append_row(fila_nueva)
-        mensaje = f"✅ Informe '{num_inf}' resguardado exitosamente con imágenes en Google Sheets."
+        if fila_idx:
+            ws.update(f"A{fila_idx}:L{fila_idx}", [fila_nueva])
+            mensaje = f"✅ Informe '{num_inf}' actualizado correctamente en Google Sheets."
+        else:
+            ws.append_row(fila_nueva)
+            mensaje = f"✅ Informe '{num_inf}' resguardado exitosamente en Google Sheets."
 
-    st.cache_data.clear()
-    return True, mensaje
+        st.cache_data.clear()
+        return True, mensaje
+    except Exception as e:
+        return False, f"Error al guardar en Google Sheets: {str(e)}"
 
 def obtener_lista_informes_guardados():
     try:
@@ -667,9 +685,8 @@ uploaded_files = st.file_uploader(
 
 imagenes_procesadas = []
 
-# Si hay imágenes subidas manualmente por file_uploader
 if uploaded_files:
-    st.session_state["imagenes_cargadas_resguardo"] = [] # Limpiar resguardo previo si se suben nuevas
+    st.session_state["imagenes_cargadas_resguardo"] = []
     archivos_ordenados = sorted(uploaded_files, key=lambda f: obtener_numero_archivo(f.name))
     st.info(f"📸 Se detectaron {len(archivos_ordenados)} imágenes subidas. Ordenadas numéricamente.")
     
@@ -684,7 +701,6 @@ if uploaded_files:
             file.seek(0)
             imagenes_procesadas.append((file.read(), pie_foto))
 
-# Si no hay imágenes subidas manualmente, pero existen imágenes cargadas del resguardo
 elif st.session_state.get("imagenes_cargadas_resguardo"):
     imgs_res = st.session_state["imagenes_cargadas_resguardo"]
     st.info(f"📸 Se cargaron {len(imgs_res)} imágenes desde el resguardo guardado.")
