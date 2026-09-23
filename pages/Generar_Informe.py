@@ -76,21 +76,31 @@ def cargar_base_equipos():
         ws = client.worksheet("BASE EQUIPOS")
         filas = ws.get_all_values()
         if len(filas) <= 1:
-            return pd.DataFrame(columns=["UNIDAD", "TAG", "DESCRIPCION"])
+            return pd.DataFrame(columns=["UNIDAD", "TAG", "DESCRIPCION", "ACA"])
         
-        # Columna C = índice 2 (UNIDAD), Columna D = índice 3 (TAG), Columna E = índice 4 (DESCRIPCION)
+        # Columna C = índice 2 (UNIDAD)
+        # Columna D = índice 3 (TAG)
+        # Columna E = índice 4 (DESCRIPCION)
+        # Columna H = índice 7 (ACA)
         datos = []
         for f in filas[1:]:
             unidad = f[2].strip() if len(f) > 2 else ""
             tag = f[3].strip() if len(f) > 3 else ""
             descripcion = f[4].strip() if len(f) > 4 else ""
+            aca_val = f[7].strip() if len(f) > 7 else ""
+            
             if tag:
-                datos.append({"UNIDAD": unidad, "TAG": tag, "DESCRIPCION": descripcion})
+                datos.append({
+                    "UNIDAD": unidad, 
+                    "TAG": tag, 
+                    "DESCRIPCION": descripcion,
+                    "ACA": aca_val
+                })
         
         return pd.DataFrame(datos)
     except Exception as e:
         st.warning(f"⚠️ No se pudo leer la hoja 'BASE EQUIPOS' ({e}). Se habilitará ingreso manual.")
-        return pd.DataFrame(columns=["UNIDAD", "TAG", "DESCRIPCION"])
+        return pd.DataFrame(columns=["UNIDAD", "TAG", "DESCRIPCION", "ACA"])
 
 @st.cache_data(ttl=3600)
 def obtener_bytes_imagen(url):
@@ -355,12 +365,14 @@ with col_search1:
 
 unidad_defecto = ""
 descripcion_defecto = ""
+aca_defecto = ""
 tag_defecto = ""
 
 if tag_seleccionado and tag_seleccionado != "-- Seleccionar de BASE EQUIPOS --" and not df_equipos.empty:
     equipo_info = df_equipos[df_equipos["TAG"] == tag_seleccionado].iloc[0]
     unidad_defecto = equipo_info["UNIDAD"]
     descripcion_defecto = equipo_info["DESCRIPCIÓN"] if "DESCRIPCIÓN" in equipo_info else equipo_info["DESCRIPCION"]
+    aca_defecto = equipo_info["ACA"]
     tag_defecto = tag_seleccionado
 
 col1, col2 = st.columns(2)
@@ -369,7 +381,7 @@ with col1:
     num_informe = st.text_input("N.º DE INFORME", placeholder="Ej: IV-2026-001")
     fecha = st.date_input("FECHA", value=date.today())
     tag = st.text_input("TAG", value=tag_defecto, placeholder="Ej: C-1302")
-    aca = st.text_input("ACA", placeholder="Ej: ACA-2026")
+    aca = st.text_input("ACA", value=aca_defecto, placeholder="Ej: ACA-2026")
 
 with col2:
     ot = st.text_input("OT", placeholder="Ej: 45001234")
