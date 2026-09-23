@@ -2,6 +2,9 @@ import io
 import re
 import requests
 import streamlit as st
+import pandas as pd
+import gspread
+from google.oauth2.service_account import Credentials
 from datetime import date
 from io import BytesIO
 
@@ -29,6 +32,7 @@ st.set_page_config(
 )
 
 URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/logo.png"
+SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 
 LISTA_INSPECTORES = [
     "Juan Navarrete",
@@ -49,6 +53,45 @@ LISTA_PLANTAS = [
     "ATRAG", "AURA1", "AURA2", "AURA3", "AVAC1", "AVAC2", "ACOKE"
 ]
 
+# =========================================================
+# CONEXIÓN A GOOGLE SHEETS (BASE EQUIPOS)
+# =========================================================
+def conectar_google_sheets():
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds_dict = dict(st.secrets["connections"]["gsheets"])
+    if "private_key" in creds_dict:
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+    credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    client = gspread.authorize(credentials)
+    return client.open_by_key(SPREADSHEET_ID)
+
+@st.cache_data(ttl=600)
+def cargar_base_equipos():
+    """Carga los datos de la hoja BASE EQUIPOS."""
+    try:
+        client = conectar_google_sheets()
+        ws = client.worksheet("BASE EQUIPOS")
+        filas = ws.get_all_values()
+        if len(filas) <= 1:
+            return pd.DataFrame(columns=["UNIDAD", "TAG", "DESCRIPCION"])
+        
+        # Columna C = índice 2 (UNIDAD), Columna D = índice 3 (TAG), Columna E = índice 4 (DESCRIPCION)
+        datos = []
+        for f in filas[1:]:
+            unidad = f[2].strip() if len(f) > 2 else ""
+            tag = f[3].strip() if len(f) > 3 else ""
+            descripcion = f[4].strip() if len(f) > 4 else ""
+            if tag:
+                datos.append({"UNIDAD": unidad, "TAG": tag, "DESCRIPCION": descripcion})
+        
+        return pd.DataFrame(datos)
+    except Exception as e:
+        st.warning(f"⚠️ No se pudo leer la hoja 'BASE EQUIPOS' ({e}). Se habilitará ingreso manual.")
+        return pd.DataFrame(columns=["UNIDAD", "TAG", "DESCRIPCION"])
+
 @st.cache_data(ttl=3600)
 def obtener_bytes_imagen(url):
     try:
@@ -60,19 +103,17 @@ def obtener_bytes_imagen(url):
     return None
 
 def obtener_numero_archivo(nombre_archivo):
-    """Extrae el número inicial del nombre del archivo para ordenar las imágenes."""
     match = re.search(r'^(\d+)', nombre_archivo)
     return int(match.group(1)) if match else 9999
 
 # =========================================================
-# DISEÑO DE PLANTILLA Y GENERACIÓN DE DOCUMENTOS
+# GENERACIÓN DE DOCUMENTOS (PDF Y WORD)
 # =========================================================
 def dibujar_plantilla_pdf(canvas, doc):
     canvas.saveState()
     canvas.setFillColor(colors.HexColor("#f8faf6"))
     canvas.rect(0, 0, letter[0], letter[1], fill=1, stroke=0)
 
-    # Logo en la esquina superior izquierda sin franja verde
     logo_bytes = obtener_bytes_imagen(URL_LOGO_GITHUB)
     if logo_bytes:
         try:
@@ -82,7 +123,6 @@ def dibujar_plantilla_pdf(canvas, doc):
         except Exception:
             pass
 
-    # Pie de página técnico
     canvas.setFont("Helvetica", 7)
     canvas.setFillColor(colors.HexColor("#6B7280"))
     canvas.drawCentredString(letter[0] / 2.0, 26, "SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.")
@@ -145,7 +185,7 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
     story.append(t_alcance)
     story.append(Spacer(1, 10))
 
-    # Puntos 1, 2, 3, 4 con subíndices opcionales
+    # Puntos 1, 2, 3, 4
     for sec_num, sec_info in secciones_dinamicas.items():
         subpuntos = sec_info['subpuntos']
         if subpuntos:
@@ -156,29 +196,24 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
                 story.append(Paragraph(titulo_sub, subsec_heading_style))
                 story.append(Paragraph(sub['contenido'] if sub['contenido'] else "-", text_style))
 
-    # SALTO DE PÁGINA OBLIGATORIO PARA PUNTO 5
+    # Salto a Punto 5 (Fotografías)
     story.append(PageBreak())
     story.append(Paragraph("5. REGISTROS FOTOGRÁFICOS", sec_heading_style))
     story.append(Spacer(1, 4))
 
-    # 📸 REGISTROS FOTOGRÁFICOS: Maximizados a 9.5 cm x 6.8 cm (Ancho total de columnas)
     if imagenes_procesadas:
         for i in range(0, len(imagenes_procesadas), 2):
-            # Salto de página cada 6 fotos (3 filas)
             if i > 0 and i % 6 == 0:
                 story.append(PageBreak())
                 story.append(Paragraph("5. REGISTROS FOTOGRÁFICOS (Continuación)", sec_heading_style))
                 story.append(Spacer(1, 4))
 
             row_cells = []
-            
-            # Foto Izquierda (Aprovechamiento máximo de columna)
             img_bytes1, label1 = imagenes_procesadas[i]
             img_obj1 = RLImage(BytesIO(img_bytes1), width=9.5*cm, height=6.8*cm)
             cell1 = [img_obj1, Spacer(1, 2), Paragraph(f"<font size=7.5><b>{label1}</b></font>", cell_body)]
             row_cells.append(cell1)
             
-            # Foto Derecha
             if i + 1 < len(imagenes_procesadas):
                 img_bytes2, label2 = imagenes_procesadas[i+1]
                 img_obj2 = RLImage(BytesIO(img_bytes2), width=9.5*cm, height=6.8*cm)
@@ -187,7 +222,6 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
             else:
                 row_cells.append("")
 
-            # Tabla con 2 columnas de 9.6 cm cada una (552 pt total = ancho útil exacto)
             t_pair = Table([row_cells], colWidths=[276, 276])
             t_pair.setStyle(TableStyle([
                 ('ALIGN', (0,0), (-1,-1), 'CENTER'),
@@ -198,7 +232,6 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
             ]))
             story.append(t_pair)
 
-    # Pie final con el inspector
     story.append(Spacer(1, 10))
     if inspector_firma:
         story.append(Paragraph(f"<b>Generado por:</b> {inspector_firma}", firma_style))
@@ -228,7 +261,6 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
 
     doc.add_paragraph()
 
-    # Tabla Encabezado Word
     table = doc.add_table(rows=5, cols=4)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.style = 'Table Grid'
@@ -256,7 +288,6 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
 
     doc.add_paragraph()
 
-    # Puntos 1, 2, 3, 4 con subíndices opcionales
     for sec_num, sec_info in secciones_dinamicas.items():
         subpuntos = sec_info['subpuntos']
         if subpuntos:
@@ -267,7 +298,6 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
                 doc.add_heading(titulo_sub, level=2)
                 doc.add_paragraph(sub['contenido'] if sub['contenido'] else "-")
 
-    # SALTO DE PÁGINA EN WORD PARA PUNTO 5
     doc.add_page_break()
     doc.add_heading("5. REGISTROS FOTOGRÁFICOS", level=1)
     
@@ -310,14 +340,35 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
 # =========================================================
 st.title("📋 Generador de Informe de Inspección Visual")
 
+# Cargar Base de Equipos desde Google Sheets
+df_equipos = cargar_base_equipos()
+
 # 1. ENCABEZADO E IDENTIFICACIÓN
 st.markdown("#### 1. Encabezado e Identificación")
+
+# BÚSQUEDA Y SELECCIÓN DESDE BASE EQUIPOS
+col_search1, col_search2 = st.columns([2, 1])
+
+with col_search1:
+    lista_tags = ["-- Seleccionar de BASE EQUIPOS --"] + df_equipos["TAG"].tolist() if not df_equipos.empty else ["-- Sin datos --"]
+    tag_seleccionado = st.selectbox("🔍 Buscar TAG en BASE EQUIPOS:", lista_tags)
+
+unidad_defecto = ""
+descripcion_defecto = ""
+tag_defecto = ""
+
+if tag_seleccionado and tag_seleccionado != "-- Seleccionar de BASE EQUIPOS --" and not df_equipos.empty:
+    equipo_info = df_equipos[df_equipos["TAG"] == tag_seleccionado].iloc[0]
+    unidad_defecto = equipo_info["UNIDAD"]
+    descripcion_defecto = equipo_info["DESCRIPCIÓN"] if "DESCRIPCIÓN" in equipo_info else equipo_info["DESCRIPCION"]
+    tag_defecto = tag_seleccionado
+
 col1, col2 = st.columns(2)
 
 with col1:
     num_informe = st.text_input("N.º DE INFORME", placeholder="Ej: IV-2026-001")
     fecha = st.date_input("FECHA", value=date.today())
-    tag = st.text_input("TAG", placeholder="Ej: C-1302")
+    tag = st.text_input("TAG", value=tag_defecto, placeholder="Ej: C-1302")
     aca = st.text_input("ACA", placeholder="Ej: ACA-2026")
 
 with col2:
@@ -325,13 +376,14 @@ with col2:
     
     col_u1, col_u2 = st.columns([2, 1])
     with col_u1:
-        unidad_select = st.selectbox("UNIDAD / PLANTA (Seleccionar):", [""] + LISTA_PLANTAS)
+        idx_u = LISTA_PLANTAS.index(unidad_defecto) + 1 if unidad_defecto in LISTA_PLANTAS else 0
+        unidad_select = st.selectbox("UNIDAD / PLANTA (Seleccionar):", [""] + LISTA_PLANTAS, index=idx_u)
     with col_u2:
-        unidad_manual = st.text_input("O escribir Unidad:", placeholder="Manual")
+        unidad_manual = st.text_input("O escribir Unidad:", value=unidad_defecto if idx_u == 0 else "", placeholder="Manual")
     
     unidad_final = unidad_manual.strip() if unidad_manual.strip() else unidad_select
 
-    descripcion = st.text_input("DESCRIPCIÓN", placeholder="Ej: Columna de Fraccionamiento")
+    descripcion = st.text_input("DESCRIPCIÓN", value=descripcion_defecto, placeholder="Ej: Columna de Fraccionamiento")
     motivo = st.text_input("MOTIVO", placeholder="Ej: Inspección Programada")
 
 alcance = st.text_area("ALCANCE", height=70, placeholder="Describa el alcance de la inspección...")
@@ -387,7 +439,7 @@ for num_sec, tit_sec in secciones_base.items():
             "subpuntos": subpuntos_list
         }
 
-# 5. REGISTROS FOTOGRÁFICOS (ÚNICA SECCIÓN DE SUBIDA DE IMÁGENES)
+# 5. REGISTROS FOTOGRÁFICOS
 st.markdown("---")
 st.markdown("#### 5. Registros Fotográficos")
 
