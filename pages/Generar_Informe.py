@@ -1,20 +1,22 @@
 import io
 import re
+import json
+import base64
 import requests
 import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-from datetime import date
+from datetime import date, datetime
 from io import BytesIO
 
 # Librerías para generación de Word
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
-from docx.oxml import OxmlElement, parse_xml
-from docx.oxml.ns import nsdecls, qn
+from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.oxml import parse_xml
+from docx.oxml.ns import nsdecls
 
 # Librerías para generación de PDF
 from reportlab.lib.pagesizes import letter
@@ -56,16 +58,13 @@ LISTA_PLANTAS = [
 ]
 
 # =========================================================
-# HELPER PARA COLOREAR CELDAS EN WORD
+# FUNCIONES AUXILIARES
 # =========================================================
 def set_cell_background(cell, fill_hex):
     tcPr = cell._tc.get_or_add_tcPr()
     shd = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{fill_hex}"/>')
     tcPr.append(shd)
 
-# =========================================================
-# CONEXIÓN A GOOGLE SHEETS (BASE EQUIPOS)
-# =========================================================
 def conectar_google_sheets():
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
@@ -78,9 +77,8 @@ def conectar_google_sheets():
     client = gspread.authorize(credentials)
     return client.open_by_key(SPREADSHEET_ID)
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=300)
 def cargar_base_equipos():
-    """Carga los datos de la hoja BASE EQUIPOS."""
     try:
         client = conectar_google_sheets()
         ws = client.worksheet("BASE EQUIPOS")
@@ -104,9 +102,126 @@ def cargar_base_equipos():
                 })
         
         return pd.DataFrame(datos)
-    except Exception as e:
-        st.warning(f"⚠️ No se pudo leer la hoja 'BASE EQUIPOS' ({e}). Se habilitará ingreso manual.")
+    except Exception:
         return pd.DataFrame(columns=["UNIDAD", "TAG", "DESCRIPCION", "ACA"])
+
+def obtener_o_crear_hoja_historial():
+    client = conectar_google_sheets()
+    try:
+        ws = client.worksheet("HISTORIAL_INFORMES")
+    except Exception:
+        ws = client.add_worksheet(title="HISTORIAL_INFORMES", rows="100", cols="20")
+        ws.append_row([
+            "num_informe", "ot", "fecha", "unidad", "tag", 
+            "descripcion", "aca", "motivo", "alcance", 
+            "secciones_json", "inspector", "fotos_json"
+        ])
+    return ws
+
+def serializar_imagenes(imagenes_procesadas):
+    """Convierte las imágenes procesadas (bytes, pie) a una cadena JSON en Base64."""
+    fotos_data = []
+    for img_bytes, pie in imagenes_procesadas:
+        b64_str = base64.b64encode(img_bytes).decode('utf-8')
+        fotos_data.append({"b64": b64_str, "pie": pie})
+    return json.dumps(fotos_data, ensure_ascii=False)
+
+def deserializar_imagenes(fotos_json_str):
+    """Decodifica la cadena JSON con imágenes en Base64 de vuelta a (bytes, pie)."""
+    if not fotos_json_str:
+        return []
+    try:
+        fotos_data = json.loads(fotos_json_str)
+        resultado = []
+        for item in fotos_data:
+            img_bytes = base64.b64decode(item["b64"])
+            resultado.append((img_bytes, item["pie"]))
+        return resultado
+    except Exception:
+        return []
+
+def guardar_resguardo_informe(datos_encabezado, secciones_dinamicas, imagenes_procesadas, inspector_firma):
+    """Guarda o actualiza un informe completo con fotos en la hoja HISTORIAL_INFORMES."""
+    ws = obtener_o_crear_hoja_historial()
+    num_inf = datos_encabezado['num_informe'].strip()
+    
+    if not num_inf:
+        return False, "Debe ingresar un N.º DE INFORME para poder resguardar."
+
+    filas = ws.get_all_values()
+    secciones_serializables = {str(k): v for k, v in secciones_dinamicas.items()}
+    secciones_json = json.dumps(secciones_serializables, ensure_ascii=False)
+    fotos_json = serializar_imagenes(imagenes_procesadas)
+    
+    fila_nueva = [
+        num_inf,
+        str(datos_encabezado['ot']),
+        datos_encabezado['fecha'].strftime("%Y-%m-%d"),
+        str(datos_encabezado['unidad']),
+        str(datos_encabezado['tag']),
+        str(datos_encabezado['descripcion']),
+        str(datos_encabezado['aca']),
+        str(datos_encabezado['motivo']),
+        str(datos_encabezado['alcance']),
+        secciones_json,
+        str(inspector_firma),
+        fotos_json
+    ]
+
+    fila_idx = None
+    for idx, f in enumerate(filas[1:], start=2):
+        if len(f) > 0 and f[0].strip().upper() == num_inf.upper():
+            fila_idx = idx
+            break
+
+    if fila_idx:
+        ws.update(f"A{fila_idx}:L{fila_idx}", [fila_nueva])
+        mensaje = f"✅ Informe '{num_inf}' actualizado correctamente con imágenes en Google Sheets."
+    else:
+        ws.append_row(fila_nueva)
+        mensaje = f"✅ Informe '{num_inf}' resguardado exitosamente con imágenes en Google Sheets."
+
+    st.cache_data.clear()
+    return True, mensaje
+
+def obtener_lista_informes_guardados():
+    try:
+        ws = obtener_o_crear_hoja_historial()
+        filas = ws.get_all_values()
+        if len(filas) <= 1:
+            return []
+        return [f[0].strip() for f in filas[1:] if len(f) > 0 and f[0].strip()]
+    except Exception:
+        return []
+
+def cargar_datos_informe(num_informe_sel):
+    try:
+        ws = obtener_o_crear_hoja_historial()
+        filas = ws.get_all_values()
+        for f in filas[1:]:
+            if len(f) > 0 and f[0].strip().upper() == num_informe_sel.upper():
+                secciones_json = json.loads(f[9]) if len(f) > 9 and f[9] else {}
+                secciones_dict = {int(k): v for k, v in secciones_json.items()}
+                fotos_json_str = f[11] if len(f) > 11 else ""
+                imgs_recuperadas = deserializar_imagenes(fotos_json_str)
+
+                return {
+                    "num_informe": f[0],
+                    "ot": f[1] if len(f) > 1 else "",
+                    "fecha": datetime.strptime(f[2], "%Y-%m-%d").date() if len(f) > 2 and f[2] else date.today(),
+                    "unidad": f[3] if len(f) > 3 else "",
+                    "tag": f[4] if len(f) > 4 else "",
+                    "descripcion": f[5] if len(f) > 5 else "",
+                    "aca": f[6] if len(f) > 6 else "",
+                    "motivo": f[7] if len(f) > 7 else "",
+                    "alcance": f[8] if len(f) > 8 else "",
+                    "secciones_dinamicas": secciones_dict,
+                    "inspector": f[10] if len(f) > 10 else "",
+                    "imagenes_procesadas": imgs_recuperadas
+                }
+    except Exception as e:
+        st.error(f"Error al cargar el informe: {e}")
+    return None
 
 @st.cache_data(ttl=3600)
 def obtener_bytes_imagen(url):
@@ -123,7 +238,7 @@ def obtener_numero_archivo(nombre_archivo):
     return int(match.group(1)) if match else 9999
 
 # =========================================================
-# GENERACIÓN DE PDF
+# GENERACIÓN DE PDF Y WORD
 # =========================================================
 def dibujar_plantilla_pdf(canvas, doc):
     canvas.saveState()
@@ -172,7 +287,6 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
         Spacer(1, 4)
     ]
 
-    # Tabla Encabezado
     data_enc = [
         [Paragraph("<b>N.º DE INFORME:</b>", cell_body), Paragraph(str(datos_encabezado['num_informe']), cell_body), Paragraph("<b>OT:</b>", cell_body), Paragraph(str(datos_encabezado['ot']), cell_body)],
         [Paragraph("<b>FECHA:</b>", cell_body), Paragraph(datos_encabezado['fecha'].strftime("%d/%m/%Y"), cell_body), Paragraph("<b>UNIDAD:</b>", cell_body), Paragraph(str(datos_encabezado['unidad']), cell_body)],
@@ -189,7 +303,6 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
     ]))
     story.append(t_enc)
 
-    # Tabla Alcance
     data_alcance = [[Paragraph("<b>ALCANCE:</b>", cell_body), Paragraph(str(datos_encabezado['alcance']), cell_body)]]
     t_alcance = Table(data_alcance, colWidths=[90, 462])
     t_alcance.setStyle(TableStyle([
@@ -201,7 +314,6 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
     story.append(t_alcance)
     story.append(Spacer(1, 10))
 
-    # Puntos 1, 2, 3, 4
     for sec_num, sec_info in secciones_dinamicas.items():
         subpuntos = sec_info['subpuntos']
         if subpuntos:
@@ -212,7 +324,6 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
                 story.append(Paragraph(titulo_sub, subsec_heading_style))
                 story.append(Paragraph(sub['contenido'] if sub['contenido'] else "-", text_style))
 
-    # Salto obligatorio a la página de Registros Fotográficos
     story.append(PageBreak())
     story.append(Paragraph("5. REGISTROS FOTOGRÁFICOS", sec_heading_style))
     story.append(Spacer(1, 2))
@@ -257,20 +368,15 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
     buffer.seek(0)
     return buffer
 
-# =========================================================
-# GENERACIÓN DE WORD (OPTIMIZADO PARA COINCIDIR CON PDF)
-# =========================================================
 def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imagenes_procesadas, inspector_firma):
     doc = Document()
     
-    # Margenes
     section = doc.sections[0]
     section.top_margin = Inches(0.8)
     section.bottom_margin = Inches(0.8)
     section.left_margin = Inches(0.8)
     section.right_margin = Inches(0.8)
 
-    # Título Principal
     p_title = doc.add_paragraph()
     p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run_title = p_title.add_run("INFORME DE INSPECCIÓN VISUAL")
@@ -278,14 +384,12 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     run_title.font.size = Pt(15)
     run_title.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
 
-    # Subtítulo
     p_sub = doc.add_paragraph()
     p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run_sub = p_sub.add_run("CONTROL DE INSPECCIÓN • CALIDAD • TRAZABILIDAD")
     run_sub.font.size = Pt(9)
     run_sub.font.color.rgb = RGBColor(0x4B, 0x55, 0x63)
 
-    # Tabla Encabezado Word estilo PDF
     table = doc.add_table(rows=5, cols=4)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.style = 'Table Grid'
@@ -299,32 +403,26 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     
     for row_idx, (k1, v1, k2, v2) in enumerate(fields):
         row = table.rows[row_idx]
-        
-        # Columna 1
         set_cell_background(row.cells[0], "F3F4F6")
         p = row.cells[0].paragraphs[0]
         r = p.add_run(k1)
         r.font.bold = True
         r.font.size = Pt(8.5)
         
-        # Columna 2
         p = row.cells[1].paragraphs[0]
         r = p.add_run(str(v1))
         r.font.size = Pt(8.5)
 
-        # Columna 3
         set_cell_background(row.cells[2], "F3F4F6")
         p = row.cells[2].paragraphs[0]
         r = p.add_run(k2)
         r.font.bold = True
         r.font.size = Pt(8.5)
 
-        # Columna 4
         p = row.cells[3].paragraphs[0]
         r = p.add_run(str(v2))
         r.font.size = Pt(8.5)
 
-    # Alcance combinado
     row_alcance = table.rows[4]
     set_cell_background(row_alcance.cells[0], "F3F4F6")
     p0 = row_alcance.cells[0].paragraphs[0]
@@ -341,7 +439,6 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
 
     doc.add_paragraph()
 
-    # Puntos 1, 2, 3, 4 con formato
     for sec_num, sec_info in secciones_dinamicas.items():
         subpuntos = sec_info['subpuntos']
         if subpuntos:
@@ -366,7 +463,6 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
                 r_cont.font.size = Pt(8.5)
                 r_cont.font.color.rgb = RGBColor(0x1F, 0x29, 0x37)
 
-    # Salto obligatorio a la página de Registros Fotográficos
     doc.add_page_break()
     p_sec5 = doc.add_paragraph()
     r_sec5 = p_sec5.add_run("5. REGISTROS FOTOGRÁFICOS")
@@ -374,7 +470,6 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     r_sec5.font.size = Pt(11)
     r_sec5.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
 
-    # Fotos en Word (3 filas x 2 columnas = 6 por página)
     if imagenes_procesadas:
         img_table = doc.add_table(rows=0, cols=2)
         img_table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -382,7 +477,6 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
         for i in range(0, len(imagenes_procesadas), 2):
             row_cells = img_table.add_row().cells
             
-            # Foto 1
             img_data1, label1 = imagenes_procesadas[i]
             p1 = row_cells[0].paragraphs[0]
             p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -394,7 +488,6 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
             r1_sub.font.bold = True
             r1_sub.font.size = Pt(8)
 
-            # Foto 2
             if i + 1 < len(imagenes_procesadas):
                 img_data2, label2 = imagenes_procesadas[i+1]
                 p2 = row_cells[1].paragraphs[0]
@@ -407,7 +500,6 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
                 r2_sub.font.bold = True
                 r2_sub.font.size = Pt(8)
 
-    # Firma
     if inspector_firma:
         p_firma = doc.add_paragraph()
         p_firma.alignment = WD_ALIGN_PARAGRAPH.RIGHT
@@ -426,55 +518,89 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
 # =========================================================
 st.title("📋 Generador de Informe de Inspección Visual")
 
-# Cargar Base de Equipos desde Google Sheets
 df_equipos = cargar_base_equipos()
+
+if "imagenes_cargadas_resguardo" not in st.session_state:
+    st.session_state["imagenes_cargadas_resguardo"] = []
+
+# SECCIÓN DE CARGAR INFORMES PREVIAMENTE RESGUARDADOS
+st.markdown("### 📂 Cargar Informe Resguardado para Modificar")
+lista_informes_guardados = ["-- Seleccionar informe resguardado --"] + obtener_lista_informes_guardados()
+informe_sel = st.selectbox("Buscar por N.° de Informe Guardado:", lista_informes_guardados)
+
+if st.button("📂 Cargar Datos e Imágenes del Informe Seleccionado", use_container_width=True):
+    if informe_sel and informe_sel != "-- Seleccionar informe resguardado --":
+        datos_cargados = cargar_datos_informe(informe_sel)
+        if datos_cargados:
+            st.session_state['num_informe'] = datos_cargados['num_informe']
+            st.session_state['ot'] = datos_cargados['ot']
+            st.session_state['fecha'] = datos_cargados['fecha']
+            st.session_state['unidad'] = datos_cargados['unidad']
+            st.session_state['tag'] = datos_cargados['tag']
+            st.session_state['descripcion'] = datos_cargados['descripcion']
+            st.session_state['aca'] = datos_cargados['aca']
+            st.session_state['motivo'] = datos_cargados['motivo']
+            st.session_state['alcance'] = datos_cargados['alcance']
+            st.session_state['inspector_firma'] = datos_cargados['inspector']
+
+            # Cargar subpuntos dinámicos
+            sec_loaded = datos_cargados['secciones_dinamicas']
+            for s_num in [1, 2, 3, 4]:
+                sub_list = sec_loaded.get(s_num, {}).get('subpuntos', [])
+                st.session_state[f"cant_subpuntos_sec_{s_num}"] = len(sub_list)
+                for idx, sub in enumerate(sub_list, start=1):
+                    st.session_state[f"tit_{s_num}_{idx}"] = sub.get("titulo", "")
+                    st.session_state[f"cont_{s_num}_{idx}"] = sub.get("contenido", "")
+
+            # Cargar imágenes resguardadas
+            st.session_state["imagenes_cargadas_resguardo"] = datos_cargados["imagenes_procesadas"]
+
+            st.success(f"¡Informe '{informe_sel}' cargado correctamente con {len(st.session_state['imagenes_cargadas_resguardo'])} imágenes!")
+            st.rerun()
+
+st.markdown("---")
 
 # 1. ENCABEZADO E IDENTIFICACIÓN
 st.markdown("#### 1. Encabezado e Identificación")
 
-# BÚSQUEDA Y SELECCIÓN DESDE BASE EQUIPOS
 col_search1, col_search2 = st.columns([2, 1])
 
 with col_search1:
     lista_tags = ["-- Seleccionar de BASE EQUIPOS --"] + df_equipos["TAG"].tolist() if not df_equipos.empty else ["-- Sin datos --"]
     tag_seleccionado = st.selectbox("🔍 Buscar TAG en BASE EQUIPOS:", lista_tags)
 
-unidad_defecto = ""
-descripcion_defecto = ""
-aca_defecto = ""
-tag_defecto = ""
-
 if tag_seleccionado and tag_seleccionado != "-- Seleccionar de BASE EQUIPOS --" and not df_equipos.empty:
     equipo_info = df_equipos[df_equipos["TAG"] == tag_seleccionado].iloc[0]
-    unidad_defecto = equipo_info["UNIDAD"]
-    descripcion_defecto = equipo_info["DESCRIPCIÓN"] if "DESCRIPCIÓN" in equipo_info else equipo_info["DESCRIPCION"]
-    aca_defecto = equipo_info["ACA"]
-    tag_defecto = tag_seleccionado
+    st.session_state['unidad'] = equipo_info["UNIDAD"]
+    st.session_state['descripcion'] = equipo_info["DESCRIPCIÓN"] if "DESCRIPCIÓN" in equipo_info else equipo_info["DESCRIPCION"]
+    st.session_state['aca'] = equipo_info["ACA"]
+    st.session_state['tag'] = tag_seleccionado
 
 col1, col2 = st.columns(2)
 
 with col1:
-    num_informe = st.text_input("N.º DE INFORME", placeholder="Ej: IV-2026-001")
-    fecha = st.date_input("FECHA", value=date.today())
-    tag = st.text_input("TAG", value=tag_defecto, placeholder="Ej: C-1302")
-    aca = st.text_input("ACA", value=aca_defecto, placeholder="Ej: ACA-2026")
+    num_informe = st.text_input("N.º DE INFORME", key='num_informe', placeholder="Ej: IV-2026-001")
+    fecha = st.date_input("FECHA", key='fecha', value=date.today())
+    tag = st.text_input("TAG", key='tag', placeholder="Ej: C-1302")
+    aca = st.text_input("ACA", key='aca', placeholder="Ej: ACA-2026")
 
 with col2:
-    ot = st.text_input("OT", placeholder="Ej: 45001234")
+    ot = st.text_input("OT", key='ot', placeholder="Ej: 45001234")
     
     col_u1, col_u2 = st.columns([2, 1])
+    val_u = st.session_state.get('unidad', '')
+    idx_u = LISTA_PLANTAS.index(val_u) + 1 if val_u in LISTA_PLANTAS else 0
     with col_u1:
-        idx_u = LISTA_PLANTAS.index(unidad_defecto) + 1 if unidad_defecto in LISTA_PLANTAS else 0
         unidad_select = st.selectbox("UNIDAD / PLANTA (Seleccionar):", [""] + LISTA_PLANTAS, index=idx_u)
     with col_u2:
-        unidad_manual = st.text_input("O escribir Unidad:", value=unidad_defecto if idx_u == 0 else "", placeholder="Manual")
+        unidad_manual = st.text_input("O escribir Unidad:", value=val_u if idx_u == 0 else "", placeholder="Manual")
     
     unidad_final = unidad_manual.strip() if unidad_manual.strip() else unidad_select
 
-    descripcion = st.text_input("DESCRIPCIÓN", value=descripcion_defecto, placeholder="Ej: Columna de Fraccionamiento")
-    motivo = st.text_input("MOTIVO", placeholder="Ej: Inspección Programada")
+    descripcion = st.text_input("DESCRIPCIÓN", key='descripcion', placeholder="Ej: Columna de Fraccionamiento")
+    motivo = st.text_input("MOTIVO", key='motivo', placeholder="Ej: Inspección Programada")
 
-alcance = st.text_area("ALCANCE", height=70, placeholder="Describa el alcance de la inspección...")
+alcance = st.text_area("ALCANCE", key='alcance', height=70, placeholder="Describa el alcance de la inspección...")
 
 # 2, 3, 4. DESARROLLO DEL INFORME CON SUBÍNDICES OPCIONALES
 st.markdown("---")
@@ -539,9 +665,11 @@ uploaded_files = st.file_uploader(
 
 imagenes_procesadas = []
 
+# Si hay imágenes subidas manualmente por file_uploader
 if uploaded_files:
+    st.session_state["imagenes_cargadas_resguardo"] = [] # Limpiar resguardo previo si se suben nuevas
     archivos_ordenados = sorted(uploaded_files, key=lambda f: obtener_numero_archivo(f.name))
-    st.info(f"📸 Se detectaron {len(archivos_ordenados)} imágenes. Ordenadas numéricamente.")
+    st.info(f"📸 Se detectaron {len(archivos_ordenados)} imágenes subidas. Ordenadas numéricamente.")
     
     cols = st.columns(3)
     for index, file in enumerate(archivos_ordenados):
@@ -554,16 +682,24 @@ if uploaded_files:
             file.seek(0)
             imagenes_procesadas.append((file.read(), pie_foto))
 
+# Si no hay imágenes subidas manualmente, pero existen imágenes cargadas del resguardo
+elif st.session_state.get("imagenes_cargadas_resguardo"):
+    imgs_res = st.session_state["imagenes_cargadas_resguardo"]
+    st.info(f"📸 Se cargaron {len(imgs_res)} imágenes desde el resguardo guardado.")
+    
+    cols = st.columns(3)
+    for index, (img_bytes, pie_orig) in enumerate(imgs_res):
+        with cols[index % 3]:
+            st.image(img_bytes, caption=f"Foto {index+1}", use_container_width=True)
+            pie_foto = st.text_input(f"Pie de foto {index+1}:", value=pie_orig, key=f"img_resguardada_{index}")
+            imagenes_procesadas.append((img_bytes, pie_foto))
+
 # FIRMA / GENERADO POR
 st.markdown("---")
 st.markdown("#### Responsable del Informe")
-inspector_firma = st.selectbox("👷‍♂️ Generado por:", [""] + LISTA_INSPECTORES)
-
-# GENERAR Y DESCARGAR ARCHIVOS
-st.markdown("---")
-st.markdown("#### Exportar Informe Final")
-
-col_btn_p, col_btn_w = st.columns(2)
+val_insp = st.session_state.get('inspector_firma', '')
+idx_insp = LISTA_INSPECTORES.index(val_insp) + 1 if val_insp in LISTA_INSPECTORES else 0
+inspector_firma = st.selectbox("👷‍♂️ Generado por:", [""] + LISTA_INSPECTORES, index=idx_insp, key='inspector_firma')
 
 datos_encabezado = {
     'num_informe': num_informe,
@@ -576,6 +712,23 @@ datos_encabezado = {
     'motivo': motivo,
     'alcance': alcance
 }
+
+# BOTÓN DE RESGUARDAR / GUARDAR EN GOOGLE SHEETS
+st.markdown("---")
+st.markdown("#### 💾 Resguardo del Informe")
+
+if st.button("💾 RESGUARDAR INFORME EN GOOGLE SHEETS", type="primary", use_container_width=True):
+    exito, msg = guardar_resguardo_informe(datos_encabezado, secciones_dinamicas, imagenes_procesadas, inspector_firma)
+    if exito:
+        st.success(msg)
+    else:
+        st.error(msg)
+
+# GENERAR Y DESCARGAR ARCHIVOS
+st.markdown("---")
+st.markdown("#### Exportar Informe Final")
+
+col_btn_p, col_btn_w = st.columns(2)
 
 with col_btn_p:
     pdf_buffer = generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imagenes_procesadas, inspector_firma)
