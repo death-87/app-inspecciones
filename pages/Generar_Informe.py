@@ -10,9 +10,11 @@ from io import BytesIO
 
 # Librerías para generación de Word
 from docx import Document
-from docx.shared import Inches, Pt
+from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
+from docx.oxml import OxmlElement, parse_xml
+from docx.oxml.ns import nsdecls, qn
 
 # Librerías para generación de PDF
 from reportlab.lib.pagesizes import letter
@@ -52,6 +54,14 @@ LISTA_PLANTAS = [
     "ASUEL", "ASVAQ", "ASVAP", "ASWS2", "ASYBR", "ASEFL", "ASEFQ", "ATOP1", "ATOP2", 
     "ATRAG", "AURA1", "AURA2", "AURA3", "AVAC1", "AVAC2", "ACOKE"
 ]
+
+# =========================================================
+# HELPER PARA COLOREAR CELDAS EN WORD
+# =========================================================
+def set_cell_background(cell, fill_hex):
+    tcPr = cell._tc.get_or_add_tcPr()
+    shd = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{fill_hex}"/>')
+    tcPr.append(shd)
 
 # =========================================================
 # CONEXIÓN A GOOGLE SHEETS (BASE EQUIPOS)
@@ -113,7 +123,7 @@ def obtener_numero_archivo(nombre_archivo):
     return int(match.group(1)) if match else 9999
 
 # =========================================================
-# GENERACIÓN DE DOCUMENTOS (PDF Y WORD)
+# GENERACIÓN DE PDF
 # =========================================================
 def dibujar_plantilla_pdf(canvas, doc):
     canvas.saveState()
@@ -207,24 +217,19 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
     story.append(Paragraph("5. REGISTROS FOTOGRÁFICOS", sec_heading_style))
     story.append(Spacer(1, 2))
 
-    # 📸 REGISTROS FOTOGRÁFICOS: Exactamente 6 fotos por página (3 filas x 2 columnas)
     if imagenes_procesadas:
         for i in range(0, len(imagenes_procesadas), 2):
-            # Salto de página estricto cada 6 imágenes (3 parejas completadas)
             if i > 0 and i % 6 == 0:
                 story.append(PageBreak())
                 story.append(Paragraph("5. REGISTROS FOTOGRÁFICOS (Continuación)", sec_heading_style))
                 story.append(Spacer(1, 2))
 
             row_cells = []
-            
-            # Foto Izquierda
             img_bytes1, label1 = imagenes_procesadas[i]
             img_obj1 = RLImage(BytesIO(img_bytes1), width=9.4*cm, height=6.2*cm)
             cell1 = [img_obj1, Paragraph(f"<font size=7><b>{label1}</b></font>", cell_body)]
             row_cells.append(cell1)
             
-            # Foto Derecha
             if i + 1 < len(imagenes_procesadas):
                 img_bytes2, label2 = imagenes_procesadas[i+1]
                 img_obj2 = RLImage(BytesIO(img_bytes2), width=9.4*cm, height=6.2*cm)
@@ -252,67 +257,124 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
     buffer.seek(0)
     return buffer
 
+# =========================================================
+# GENERACIÓN DE WORD (OPTIMIZADO PARA COINCIDIR CON PDF)
+# =========================================================
 def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imagenes_procesadas, inspector_firma):
     doc = Document()
     
+    # Margenes
     section = doc.sections[0]
     section.top_margin = Inches(0.8)
     section.bottom_margin = Inches(0.8)
     section.left_margin = Inches(0.8)
     section.right_margin = Inches(0.8)
 
-    title = doc.add_paragraph("INFORME DE INSPECCIÓN VISUAL")
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    title.runs[0].font.bold = True
-    title.runs[0].font.size = Pt(16)
-    
-    subtitle = doc.add_paragraph("CONTROL DE INSPECCIÓN • CALIDAD • TRAZABILIDAD")
-    subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    subtitle.runs[0].font.size = Pt(10)
-    subtitle.runs[0].font.italic = True
+    # Título Principal
+    p_title = doc.add_paragraph()
+    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run_title = p_title.add_run("INFORME DE INSPECCIÓN VISUAL")
+    run_title.font.bold = True
+    run_title.font.size = Pt(15)
+    run_title.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
 
-    doc.add_paragraph()
+    # Subtítulo
+    p_sub = doc.add_paragraph()
+    p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run_sub = p_sub.add_run("CONTROL DE INSPECCIÓN • CALIDAD • TRAZABILIDAD")
+    run_sub.font.size = Pt(9)
+    run_sub.font.color.rgb = RGBColor(0x4B, 0x55, 0x63)
 
+    # Tabla Encabezado Word estilo PDF
     table = doc.add_table(rows=5, cols=4)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.style = 'Table Grid'
-    
+
     fields = [
-        ("N.º DE INFORME", datos_encabezado['num_informe'], "OT", datos_encabezado['ot']),
-        ("FECHA", datos_encabezado['fecha'].strftime("%d/%m/%Y"), "UNIDAD", datos_encabezado['unidad']),
-        ("TAG", datos_encabezado['tag'], "DESCRIPCIÓN", datos_encabezado['descripcion']),
-        ("ACA", datos_encabezado['aca'], "MOTIVO", datos_encabezado['motivo']),
+        ("N.º DE INFORME:", datos_encabezado['num_informe'], "OT:", datos_encabezado['ot']),
+        ("FECHA:", datos_encabezado['fecha'].strftime("%d/%m/%Y"), "UNIDAD:", datos_encabezado['unidad']),
+        ("TAG:", datos_encabezado['tag'], "DESCRIPCIÓN:", datos_encabezado['descripcion']),
+        ("ACA:", datos_encabezado['aca'], "MOTIVO:", datos_encabezado['motivo']),
     ]
     
     for row_idx, (k1, v1, k2, v2) in enumerate(fields):
         row = table.rows[row_idx]
-        row.cells[0].paragraphs[0].add_run(k1).bold = True
-        row.cells[1].paragraphs[0].text = str(v1)
-        row.cells[2].paragraphs[0].add_run(k2).bold = True
-        row.cells[3].paragraphs[0].text = str(v2)
+        
+        # Columna 1
+        set_cell_background(row.cells[0], "F3F4F6")
+        p = row.cells[0].paragraphs[0]
+        r = p.add_run(k1)
+        r.font.bold = True
+        r.font.size = Pt(8.5)
+        
+        # Columna 2
+        p = row.cells[1].paragraphs[0]
+        r = p.add_run(str(v1))
+        r.font.size = Pt(8.5)
 
+        # Columna 3
+        set_cell_background(row.cells[2], "F3F4F6")
+        p = row.cells[2].paragraphs[0]
+        r = p.add_run(k2)
+        r.font.bold = True
+        r.font.size = Pt(8.5)
+
+        # Columna 4
+        p = row.cells[3].paragraphs[0]
+        r = p.add_run(str(v2))
+        r.font.size = Pt(8.5)
+
+    # Alcance combinado
     row_alcance = table.rows[4]
-    row_alcance.cells[0].paragraphs[0].add_run("ALCANCE").bold = True
+    set_cell_background(row_alcance.cells[0], "F3F4F6")
+    p0 = row_alcance.cells[0].paragraphs[0]
+    r0 = p0.add_run("ALCANCE:")
+    r0.font.bold = True
+    r0.font.size = Pt(8.5)
+
     cell_span = row_alcance.cells[1]
-    for cell in [row_alcance.cells[2], row_alcance.cells[3]]:
-        cell_span.merge(cell)
-    cell_span.paragraphs[0].text = str(datos_encabezado['alcance'])
+    cell_span.merge(row_alcance.cells[2])
+    cell_span.merge(row_alcance.cells[3])
+    p_alc = cell_span.paragraphs[0]
+    r_alc = p_alc.add_run(str(datos_encabezado['alcance']))
+    r_alc.font.size = Pt(8.5)
 
     doc.add_paragraph()
 
+    # Puntos 1, 2, 3, 4 con formato
     for sec_num, sec_info in secciones_dinamicas.items():
         subpuntos = sec_info['subpuntos']
         if subpuntos:
-            doc.add_heading(f"{sec_num}. {sec_info['titulo']}", level=1)
+            p_sec = doc.add_paragraph()
+            r_sec = p_sec.add_run(f"{sec_num}. {sec_info['titulo']}")
+            r_sec.font.bold = True
+            r_sec.font.size = Pt(11)
+            r_sec.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
+
             for idx, sub in enumerate(subpuntos, start=1):
                 num_sub = f"{sec_num}.{idx}"
                 titulo_sub = f"{num_sub} {sub['titulo']}" if sub['titulo'] else num_sub
-                doc.add_heading(titulo_sub, level=2)
-                doc.add_paragraph(sub['contenido'] if sub['contenido'] else "-")
+                
+                p_subsec = doc.add_paragraph()
+                r_subsec = p_subsec.add_run(titulo_sub)
+                r_subsec.font.bold = True
+                r_subsec.font.size = Pt(9.5)
+                r_subsec.font.color.rgb = RGBColor(0x61, 0x9B, 0x40)
 
+                p_cont = doc.add_paragraph()
+                r_cont = p_cont.add_run(sub['contenido'] if sub['contenido'] else "-")
+                r_cont.font.size = Pt(8.5)
+                r_cont.font.color.rgb = RGBColor(0x1F, 0x29, 0x37)
+
+    # Salto obligatorio a la página de Registros Fotográficos
     doc.add_page_break()
-    doc.add_heading("5. REGISTROS FOTOGRÁFICOS", level=1)
-    
+    p_sec5 = doc.add_paragraph()
+    r_sec5 = p_sec5.add_run("5. REGISTROS FOTOGRÁFICOS")
+    r_sec5.font.bold = True
+    r_sec5.font.size = Pt(11)
+    r_sec5.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
+
+    # Fotos en Word (3 filas x 2 columnas = 6 por página)
     if imagenes_procesadas:
         img_table = doc.add_table(rows=0, cols=2)
         img_table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -320,27 +382,39 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
         for i in range(0, len(imagenes_procesadas), 2):
             row_cells = img_table.add_row().cells
             
+            # Foto 1
             img_data1, label1 = imagenes_procesadas[i]
             p1 = row_cells[0].paragraphs[0]
             p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            p1.add_run().add_picture(BytesIO(img_data1), width=Inches(3.2))
-            p1_sub = row_cells[0].add_paragraph(str(label1))
+            p1.add_run().add_picture(BytesIO(img_data1), width=Inches(3.5))
+            
+            p1_sub = row_cells[0].add_paragraph()
             p1_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r1_sub = p1_sub.add_run(str(label1))
+            r1_sub.font.bold = True
+            r1_sub.font.size = Pt(8)
 
+            # Foto 2
             if i + 1 < len(imagenes_procesadas):
                 img_data2, label2 = imagenes_procesadas[i+1]
                 p2 = row_cells[1].paragraphs[0]
                 p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                p2.add_run().add_picture(BytesIO(img_data2), width=Inches(3.2))
-                p2_sub = row_cells[1].add_paragraph(str(label2))
+                p2.add_run().add_picture(BytesIO(img_data2), width=Inches(3.5))
+                
+                p2_sub = row_cells[1].add_paragraph()
                 p2_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                r2_sub = p2_sub.add_run(str(label2))
+                r2_sub.font.bold = True
+                r2_sub.font.size = Pt(8)
 
+    # Firma
     if inspector_firma:
         p_firma = doc.add_paragraph()
         p_firma.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         p_run = p_firma.add_run(f"\nGenerado por: {inspector_firma}")
         p_run.font.bold = True
-        p_run.font.size = Pt(10)
+        p_run.font.size = Pt(9.5)
+        p_run.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
 
     buffer = BytesIO()
     doc.save(buffer)
