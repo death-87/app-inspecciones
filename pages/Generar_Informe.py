@@ -58,14 +58,16 @@ LISTA_PLANTAS = [
 ]
 
 # =========================================================
-# FUNCIONES AUXILIARES
+# FUNCIONES AUXILIARES Y CONEXIÓN CON CACHÉ
 # =========================================================
 def set_cell_background(cell, fill_hex):
     tcPr = cell._tc.get_or_add_tcPr()
     shd = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{fill_hex}"/>')
     tcPr.append(shd)
 
+@st.cache_resource
 def conectar_google_sheets():
+    """Mantiene en caché la conexión autorizada con Google Sheets para no saturar las cuotas de la API."""
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
