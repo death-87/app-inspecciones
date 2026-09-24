@@ -6,6 +6,39 @@ import requests
 import streamlit as st
 import pandas as pd
 import gspread
+# ============================================================
+# PRUEBA DE AUTENTICACIÓN GOOGLE DRIVE
+# ============================================================
+
+if not st.user.is_logged_in:
+    st.title("🔐 Autorización de Google Drive")
+
+    st.write(
+        "Debes iniciar sesión con la cuenta de Google "
+        "que contiene tu Google Drive personal."
+    )
+
+    if st.button("🔑 Iniciar sesión con Google"):
+        st.login()
+
+    st.stop()
+
+# Usuario autenticado
+st.success("✅ Google OAuth funcionando")
+
+st.write("Cuenta:", st.user.email)
+
+if "access" in st.user.tokens:
+    st.success("✅ Access token recibido correctamente")
+else:
+    st.error("❌ No se recibió el access token")
+
+st.write("Usuario:", st.user.name)
+
+if st.button("Cerrar sesión"):
+    st.logout()
+
+st.stop()
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
