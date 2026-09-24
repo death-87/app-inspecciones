@@ -125,10 +125,10 @@ def conectar_google_sheets():
 
 @st.cache_resource
 def conectar_google_drive():
-    """Conecta Google Drive usando la cuenta personal autorizada mediante OAuth."""
+    """Conecta Google Drive usando OAuth de la cuenta personal."""
 
     if not st.user.is_logged_in:
-        st.error("Debes iniciar sesión con Google para acceder a tu Google Drive.")
+        st.error("Debes iniciar sesión con Google.")
         return None
 
     try:
@@ -138,14 +138,16 @@ def conectar_google_drive():
             token=access_token
         )
 
-        return build(
+        drive_service = build(
             "drive",
             "v3",
             credentials=credentials
         )
 
+        return drive_service
+
     except Exception as e:
-        st.error(f"Error al conectar con Google Drive mediante OAuth: {e}")
+        st.error(f"Error conectando con Google Drive: {e}")
         return None
 
 # =========================================================
