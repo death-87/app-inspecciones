@@ -34,7 +34,7 @@ st.set_page_config(
 )
 
 # =========================================================
-# AUTENTICACIÓN GOOGLE OAUTH
+# AUTENTICACIÓN GOOGLE OAUTH Y PERSISTENCIA DE TOKEN
 # =========================================================
 if not st.user.is_logged_in:
     st.title("🔐 Autorización de Google Drive")
@@ -45,6 +45,17 @@ if not st.user.is_logged_in:
     if st.button("🔑 Iniciar sesión con Google", type="primary"):
         st.login()
     st.stop()
+
+# Extracción y guardado del token en st.session_state para subpáginas
+access_token_obtenido = None
+
+if hasattr(st.user, "tokens") and st.user.tokens:
+    access_token_obtenido = st.user.tokens.get("access") or st.user.tokens.get("access_token")
+elif hasattr(st.user, "access_token"):
+    access_token_obtenido = st.user.access_token
+
+if access_token_obtenido:
+    st.session_state["access_token"] = access_token_obtenido
 
 # 🔗 URLs RAW DE LOGO, FRANJA Y PERSONAJE EN GITHUB
 URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/logo.png"
@@ -205,7 +216,6 @@ def generar_pdf_informe(df_filtrado, titulo_doc, subtitulo_doc):
 
     if not df_filtrado.empty:
         inspectores_grupos = df_filtrado.groupby('inspector', sort=False)
-        total_grupos = len(inspectores_grupos)
         for idx, (inspector_nom, group_df) in enumerate(inspectores_grupos):
             story.append(Paragraph(f"👷‍♂️ Inspector: <b>{inspector_nom}</b>", inspector_heading_style))
             table_data = [[
