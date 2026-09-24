@@ -126,6 +126,7 @@ def conectar_google_sheets():
 @st.cache_resource
 def conectar_google_drive():
     """Conecta Google Drive usando la cuenta personal autorizada mediante OAuth."""
+
     if not st.user.is_logged_in:
         st.error("Debes iniciar sesión con Google para acceder a tu Google Drive.")
         return None
