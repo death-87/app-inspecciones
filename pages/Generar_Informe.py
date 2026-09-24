@@ -1,7 +1,6 @@
 import io
 import re
 import json
-import base64
 import requests
 import streamlit as st
 import pandas as pd
@@ -13,7 +12,6 @@ from googleapiclient.http import MediaIoBaseDownload
 
 from datetime import date, datetime
 from io import BytesIO
-from PIL import Image as PILImage
 
 # Librerías para generación de Word
 from docx import Document
@@ -167,7 +165,7 @@ def obtener_imagenes_desde_drive_folder(folder_input):
         files = results.get('files', [])
 
         if not files:
-            return [], "No se encontraron imágenes en la carpeta. Verifica que las fotos sean formato JPG/PNG y que la carpeta esté compartida con la Service Account o pública con el enlace."
+            return [], "No se encontraron imágenes en la carpeta de Google Drive."
 
         files_ordenados = sorted(files, key=lambda f: obtener_numero_archivo(f['name']))
         
@@ -216,43 +214,6 @@ def obtener_numero_archivo(nombre_archivo):
     return int(match.group(1)) if match else 9999
 
 
-def optimizar_imagen_bytes(img_bytes, max_dimension=600, calidad=50):
-    try:
-        img = PILImage.open(BytesIO(img_bytes))
-        if img.mode in ("RGBA", "P"):
-            img = img.convert("RGB")
-        img.thumbnail((max_dimension, max_dimension), PILImage.Resampling.LANCZOS)
-        
-        buffer = BytesIO()
-        img.save(buffer, format="JPEG", quality=calidad, optimize=True)
-        return buffer.getvalue()
-    except Exception:
-        return img_bytes
-
-
-def serializar_imagenes(imagenes_procesadas):
-    fotos_data = []
-    for img_bytes, pie in imagenes_procesadas:
-        bytes_opt = optimizar_imagen_bytes(img_bytes)
-        b64_str = base64.b64encode(bytes_opt).decode('utf-8')
-        fotos_data.append({"b64": b64_str, "pie": pie})
-    return json.dumps(fotos_data, ensure_ascii=False)
-
-
-def deserializar_imagenes(fotos_json_str):
-    if not fotos_json_str:
-        return []
-    try:
-        fotos_data = json.loads(fotos_json_str)
-        resultado = []
-        for item in fotos_data:
-            img_bytes = base64.b64decode(item["b64"])
-            resultado.append((img_bytes, item["pie"]))
-        return resultado
-    except Exception:
-        return []
-
-
 # =========================================================
 # LECTURA / ESCRITURA EN HISTORIAL
 # =========================================================
@@ -296,12 +257,12 @@ def obtener_o_crear_hoja_historial():
         ws.append_row([
             "num_informe", "ot", "fecha", "unidad", "tag",
             "descripcion", "aca", "motivo", "alcance",
-            "secciones_json", "inspector", "fotos_json"
+            "secciones_json", "inspector", "drive_link"
         ])
     return ws
 
 
-def guardar_resguardo_informe(datos_encabezado, secciones_dinamicas, imagenes_procesadas, inspector_firma):
+def guardar_resguardo_informe(datos_encabezado, secciones_dinamicas, drive_link, inspector_firma):
     try:
         ws = obtener_o_crear_hoja_historial()
         num_inf = datos_encabezado["num_informe"].strip()
@@ -312,10 +273,6 @@ def guardar_resguardo_informe(datos_encabezado, secciones_dinamicas, imagenes_pr
         filas = ws.get_all_values()
         secciones_serializables = {str(k): v for k, v in secciones_dinamicas.items()}
         secciones_json = json.dumps(secciones_serializables, ensure_ascii=False)
-        fotos_json = serializar_imagenes(imagenes_procesadas)
-
-        if len(fotos_json) > 45000:
-            return False, f"⚠️ El conjunto de fotografías ({len(imagenes_procesadas)} fotos) excede el tamaño máximo permitido por Google Sheets."
 
         fila_nueva = [
             num_inf,
@@ -329,7 +286,7 @@ def guardar_resguardo_informe(datos_encabezado, secciones_dinamicas, imagenes_pr
             str(datos_encabezado["alcance"]),
             secciones_json,
             str(inspector_firma),
-            fotos_json
+            str(drive_link)
         ]
 
         fila_idx = None
@@ -371,8 +328,12 @@ def cargar_datos_informe(num_informe_sel):
             if len(f) > 0 and f[0].strip().upper() == num_informe_sel.upper():
                 secciones_json = json.loads(f[9]) if len(f) > 9 and f[9] else {}
                 secciones_dict = {int(k): v for k, v in secciones_json.items()}
-                fotos_json_str = f[11] if len(f) > 11 else ""
-                imgs_recuperadas = deserializar_imagenes(fotos_json_str)
+                drive_link = f[11] if len(f) > 11 else ""
+
+                # Si tiene link de drive guardado, se descargan las fotos automáticamente
+                imgs_recuperadas = []
+                if drive_link:
+                    imgs_recuperadas, _ = obtener_imagenes_desde_drive_folder(drive_link)
 
                 return {
                     "num_informe": f[0],
@@ -386,6 +347,7 @@ def cargar_datos_informe(num_informe_sel):
                     "alcance": f[8] if len(f) > 8 else "",
                     "secciones_dinamicas": secciones_dict,
                     "inspector": f[10] if len(f) > 10 else "",
+                    "drive_link": drive_link,
                     "imagenes_procesadas": imgs_recuperadas
                 }
     except Exception as e:
@@ -394,7 +356,6 @@ def cargar_datos_informe(num_informe_sel):
 
 
 def eliminar_informe_guardado(num_informe_sel):
-    """Elimina la fila correspondiente al informe en la hoja HISTORIAL_INFORMES."""
     try:
         ws = obtener_o_crear_hoja_historial()
         filas = ws.get_all_values()
@@ -729,6 +690,7 @@ if btn_cargar:
             st.session_state['motivo'] = datos_cargados['motivo']
             st.session_state['alcance'] = datos_cargados['alcance']
             st.session_state['inspector_firma'] = datos_cargados['inspector']
+            st.session_state['drive_link'] = datos_cargados['drive_link']
 
             sec_loaded = datos_cargados['secciones_dinamicas']
             for s_num in [1, 2, 3, 4]:
@@ -856,47 +818,26 @@ for num_sec, tit_sec in secciones_base.items():
 st.markdown("---")
 st.markdown("#### 5. Registros Fotográficos")
 
-tab_drive, tab_pc = st.tabs(["📁 Cargar desde Carpeta de Google Drive", "💻 Subir desde PC"])
-
 imagenes_procesadas = []
 
-with tab_drive:
-    drive_folder_input = st.text_input("Pegar URL o ID de Carpeta en Google Drive con las fotos:", placeholder="Ej: https://drive.google.com/drive/folders/1a2b3c4d5e...")
-    if st.button("📥 CARGAR FOTOS DESDE GOOGLE DRIVE", use_container_width=True):
-        if drive_folder_input:
-            with st.spinner("Descargando fotos desde Google Drive..."):
-                imgs_drive, msg_drive = obtener_imagenes_desde_drive_folder(drive_folder_input)
-                if imgs_drive:
-                    st.session_state["imagenes_cargadas_resguardo"] = imgs_drive
-                    st.success(msg_drive)
-                    st.rerun()
-                else:
-                    st.error(msg_drive)
+drive_folder_input = st.text_input(
+    "Pegar URL o ID de Carpeta en Google Drive con las fotos:", 
+    key="drive_link",
+    placeholder="Ej: https://drive.google.com/drive/folders/1RPXZ8oUmM2eC1U6p3u3FlepKg6hvRLQC"
+)
 
-with tab_pc:
-    uploaded_files = st.file_uploader(
-        "Subir imágenes desde su PC:",
-        type=["jpg", "jpeg", "png"],
-        accept_multiple_files=True
-    )
+if st.button("📥 CARGAR FOTOS DESDE GOOGLE DRIVE", use_container_width=True):
+    if drive_folder_input:
+        with st.spinner("Descargando fotos desde Google Drive..."):
+            imgs_drive, msg_drive = obtener_imagenes_desde_drive_folder(drive_folder_input)
+            if imgs_drive:
+                st.session_state["imagenes_cargadas_resguardo"] = imgs_drive
+                st.success(msg_drive)
+                st.rerun()
+            else:
+                st.error(msg_drive)
 
-if uploaded_files:
-    st.session_state["imagenes_cargadas_resguardo"] = []
-    archivos_ordenados = sorted(uploaded_files, key=lambda f: obtener_numero_archivo(f.name))
-    st.info(f"📸 Se detectaron {len(archivos_ordenados)} imágenes subidas. Ordenadas numéricamente.")
-
-    cols = st.columns(3)
-    for index, file in enumerate(archivos_ordenados):
-        num_extraido = obtener_numero_archivo(file.name)
-        with cols[index % 3]:
-            st.image(file, caption=f"Archivo: {file.name}", use_container_width=True)
-            caption_default = f"{num_extraido}: vista general de equipo" if num_extraido != 9999 else f"{index+1}: detalle de inspección"
-            pie_foto = st.text_input(f"Pie de foto {index+1}:", value=caption_default, key=f"img_plantilla_{file.name}_{index}")
-
-            file.seek(0)
-            imagenes_procesadas.append((file.read(), pie_foto))
-
-elif st.session_state.get("imagenes_cargadas_resguardo"):
+if st.session_state.get("imagenes_cargadas_resguardo"):
     imgs_res = st.session_state["imagenes_cargadas_resguardo"]
     st.info(f"📸 Se cargaron {len(imgs_res)} imágenes.")
 
@@ -932,7 +873,7 @@ st.markdown("#### 💾 Resguardo del Informe")
 
 if st.button("💾 RESGUARDAR INFORME EN GOOGLE SHEETS", type="primary", use_container_width=True):
     with st.spinner("Guardando resguardo del informe en Google Sheets..."):
-        exito, msg = guardar_resguardo_informe(datos_encabezado, secciones_dinamicas, imagenes_procesadas, inspector_firma)
+        exito, msg = guardar_resguardo_informe(datos_encabezado, secciones_dinamicas, drive_folder_input, inspector_firma)
         if exito:
             st.success(msg)
         else:
