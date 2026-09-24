@@ -10,10 +10,11 @@ import gspread
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 from google.oauth2.credentials import Credentials as OAuthCredentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
 from datetime import date, datetime
 from io import BytesIO
+from PIL import Image as PILImage
 
 # Librerías para generación de Word
 from docx import Document
@@ -117,7 +118,7 @@ def set_cell_background(cell, fill_hex):
 
 
 # =========================================================
-# CONEXIÓN A GOOGLE SHEETS
+# CONEXIÓN A GOOGLE SHEETS Y DRIVE
 # =========================================================
 
 @st.cache_resource
@@ -142,10 +143,6 @@ def conectar_google_sheets():
     return client.open_by_key(SPREADSHEET_ID)
 
 
-# =========================================================
-# CONEXIÓN A GOOGLE DRIVE PERSONAL (OAUTH)
-# =========================================================
-
 def conectar_google_drive():
     if not st.user.is_logged_in:
         st.error("Debes iniciar sesión con Google para acceder a tu Google Drive.")
@@ -154,15 +151,12 @@ def conectar_google_drive():
     try:
         access_token = None
 
-        # 1. Buscar en tokens de st.user
         if hasattr(st.user, "tokens") and st.user.tokens:
             access_token = st.user.tokens.get("access") or st.user.tokens.get("access_token")
 
-        # 2. Buscar en session_state (compartido desde app.py)
         if not access_token and "access_token" in st.session_state:
             access_token = st.session_state["access_token"]
 
-        # 3. Buscar en el contexto si existe
         if not access_token and hasattr(st, "context") and hasattr(st.context, "cookies"):
             access_token = st.user.get("access_token")
 
@@ -179,8 +173,61 @@ def conectar_google_drive():
 
 
 # =========================================================
-# FUNCIONES DE ALMACENAMIENTO EN GOOGLE DRIVE
+# FUNCIONES DE LECTURA/ESCRITURA EN GOOGLE DRIVE
 # =========================================================
+
+def extraer_id_carpeta(input_text):
+    """Extrae el ID de la carpeta de Drive a partir de una URL o devuelve el string si es solo ID."""
+    match = re.search(r'folders/([a-zA-Z0-9_-]+)', input_text)
+    if match:
+        return match.group(1)
+    return input_text.strip()
+
+
+def obtener_imagenes_desde_drive_folder(folder_input):
+    """Lee todas las imágenes de una carpeta de Google Drive y las descarga en memoria."""
+    folder_id = extraer_id_carpeta(folder_input)
+    if not folder_id:
+        return [], "No se proporcionó un ID o enlace válido de carpeta."
+
+    try:
+        drive_service = conectar_google_drive()
+        if not drive_service:
+            return [], "No se pudo autenticar con Google Drive."
+
+        query = f"'{folder_id}' in parents and mimeType contains 'image/' and trashed = false"
+        results = drive_service.files().list(q=query, fields="files(id, name, mimeType)").execute()
+        files = results.get('files', [])
+
+        if not files:
+            return [], "No se encontraron imágenes en la carpeta de Google Drive indicada."
+
+        files_ordenados = sorted(files, key=lambda f: obtener_numero_archivo(f['name']))
+        
+        imagenes = []
+        for index, file in enumerate(files_ordenados):
+            file_id = file['id']
+            file_name = file['name']
+
+            request = drive_service.files().get_media(fileId=file_id)
+            fh = BytesIO()
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+
+            fh.seek(0)
+            img_bytes = fh.read()
+
+            num_extraido = obtener_numero_archivo(file_name)
+            caption_default = f"{num_extraido}: vista general de equipo" if num_extraido != 9999 else f"{index+1}: detalle de inspección"
+            imagenes.append((img_bytes, caption_default))
+
+        return imagenes, f"✅ Se cargaron exitosamente {len(imagenes)} imágenes desde Google Drive."
+
+    except Exception as e:
+        return [], f"⚠️ Error al obtener imágenes de Drive: {str(e)}"
+
 
 def subir_imagen_a_drive(nombre_archivo, img_bytes):
     try:
@@ -224,7 +271,7 @@ def subir_imagen_a_drive(nombre_archivo, img_bytes):
 
 
 # =========================================================
-# DESCARGA DE IMÁGENES DESDE URL
+# DESCARGA DE IMÁGENES DESDE URL Y AUXILIARES
 # =========================================================
 
 @st.cache_data(ttl=3600)
@@ -697,7 +744,7 @@ st.markdown("### 📂 Cargar Informe Resguardado para Modificar")
 lista_informes_guardados = ["-- Seleccionar informe resguardado --"] + obtener_lista_informes_guardados()
 informe_sel = st.selectbox("Buscar por N.° de Informe Guardado:", lista_informes_guardados)
 
-if st.button("📂 Cargar Datos e Imágenes del Informe Seleccionado", width="stretch"):
+if st.button("📂 Cargar Datos e Imágenes del Informe Seleccionado", use_container_width=True):
     if informe_sel and informe_sel != "-- Seleccionar informe resguardado --":
         with st.spinner("Descargando imágenes guardadas desde Google Drive..."):
             datos_cargados = cargar_datos_informe(informe_sel)
@@ -822,13 +869,29 @@ for num_sec, tit_sec in secciones_base.items():
 st.markdown("---")
 st.markdown("#### 5. Registros Fotográficos")
 
-uploaded_files = st.file_uploader(
-    "Subir imágenes desde su PC:",
-    type=["jpg", "jpeg", "png"],
-    accept_multiple_files=True
-)
+tab_drive, tab_pc = st.tabs(["📁 Cargar desde Carpeta de Google Drive", "💻 Subir desde PC"])
 
 imagenes_procesadas = []
+
+with tab_drive:
+    drive_folder_input = st.text_input("Pegar URL o ID de Carpeta en Google Drive con las fotos:", placeholder="Ej: https://drive.google.com/drive/folders/1a2b3c4d5e...")
+    if st.button("📥 CARGAR FOTOS DESDE GOOGLE DRIVE", use_container_width=True):
+        if drive_folder_input:
+            with st.spinner("Descargando fotos directamente desde tu Google Drive..."):
+                imgs_drive, msg_drive = obtener_imagenes_desde_drive_folder(drive_folder_input)
+                if imgs_drive:
+                    st.session_state["imagenes_cargadas_resguardo"] = imgs_drive
+                    st.success(msg_drive)
+                    st.rerun()
+                else:
+                    st.error(msg_drive)
+
+with tab_pc:
+    uploaded_files = st.file_uploader(
+        "Subir imágenes desde su PC:",
+        type=["jpg", "jpeg", "png"],
+        accept_multiple_files=True
+    )
 
 if uploaded_files:
     st.session_state["imagenes_cargadas_resguardo"] = []
@@ -839,7 +902,7 @@ if uploaded_files:
     for index, file in enumerate(archivos_ordenados):
         num_extraido = obtener_numero_archivo(file.name)
         with cols[index % 3]:
-            st.image(file, caption=f"Archivo: {file.name}", width="stretch")
+            st.image(file, caption=f"Archivo: {file.name}", use_container_width=True)
             caption_default = f"{num_extraido}: vista general de equipo" if num_extraido != 9999 else f"{index+1}: detalle de inspección"
             pie_foto = st.text_input(f"Pie de foto {index+1}:", value=caption_default, key=f"img_plantilla_{file.name}_{index}")
 
@@ -853,7 +916,7 @@ elif st.session_state.get("imagenes_cargadas_resguardo"):
     cols = st.columns(3)
     for index, (img_bytes, pie_orig) in enumerate(imgs_res):
         with cols[index % 3]:
-            st.image(img_bytes, caption=f"Foto {index+1}", width="stretch")
+            st.image(img_bytes, caption=f"Foto {index+1}", use_container_width=True)
             pie_foto = st.text_input(f"Pie de foto {index+1}:", value=pie_orig, key=f"img_resguardada_{index}")
             imagenes_procesadas.append((img_bytes, pie_foto))
 
@@ -880,7 +943,7 @@ datos_encabezado = {
 st.markdown("---")
 st.markdown("#### 💾 Resguardo del Informe")
 
-if st.button("💾 RESGUARDAR INFORME Y FOTOS EN GOOGLE DRIVE", type="primary", width="stretch"):
+if st.button("💾 RESGUARDAR INFORME Y FOTOS EN GOOGLE DRIVE", type="primary", use_container_width=True):
     with st.spinner("Subiendo fotos a tu Google Drive personal y guardando informe..."):
         exito, msg = guardar_resguardo_informe(datos_encabezado, secciones_dinamicas, imagenes_procesadas, inspector_firma)
         if exito:
@@ -900,7 +963,7 @@ with col_btn_p:
         data=pdf_buffer,
         file_name=f"INFORME_VISUAL_{num_informe if num_informe else 'INSPECCION'}.pdf",
         mime="application/pdf",
-        width="stretch"
+        use_container_width=True
     )
 
 with col_btn_w:
@@ -910,5 +973,5 @@ with col_btn_w:
         data=word_buffer,
         file_name=f"INFORME_VISUAL_{num_informe if num_informe else 'INSPECCION'}.docx",
         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        width="stretch"
+        use_container_width=True
     )
