@@ -130,7 +130,7 @@ def conectar_google_drive_service_account():
 
 
 # =========================================================
-# LECTURA DE CARPETAS EN GOOGLE DRIVE
+# LECTURA DE CARPETAS EN GOOGLE DRIVE (FOTOS Y ESQUEMAS)
 # =========================================================
 
 def extraer_id_carpeta(input_text):
@@ -142,15 +142,15 @@ def extraer_id_carpeta(input_text):
 
 
 def obtener_imagenes_desde_drive_folder(folder_input):
-    """Obtiene y descarga en memoria todas las imágenes de una carpeta compartida de Drive."""
+    """Obtiene y descarga en memoria las imágenes (separando fotos normales de esquemas)."""
     folder_id = extraer_id_carpeta(folder_input)
     if not folder_id:
-        return [], "No se proporcionó un ID o enlace válido de carpeta."
+        return [], [], "No se proporcionó un ID o enlace válido de carpeta."
 
     try:
         drive_service = conectar_google_drive_service_account()
         if not drive_service:
-            return [], "No se pudo autenticar el servicio de Google Drive."
+            return [], [], "No se pudo autenticar el servicio de Google Drive."
 
         query = f"'{folder_id}' in parents and (mimeType contains 'image/' or mimeType = 'application/octet-stream') and trashed = false"
         
@@ -165,33 +165,50 @@ def obtener_imagenes_desde_drive_folder(folder_input):
         files = results.get('files', [])
 
         if not files:
-            return [], "No se encontraron imágenes en la carpeta de Google Drive."
+            return [], [], "No se encontraron imágenes en la carpeta de Google Drive."
 
-        files_ordenados = sorted(files, key=lambda f: obtener_numero_archivo(f['name']))
-        
-        imagenes = []
-        for index, file in enumerate(files_ordenados):
-            file_id = file['id']
-            file_name = file['name']
+        fotos = []
+        esquemas = []
 
-            request = drive_service.files().get_media(fileId=file_id)
+        # Separar archivos que contengan la palabra 'esquema' en el nombre
+        files_fotos = [f for f in files if "esquema" not in f['name'].lower()]
+        files_esquemas = [f for f in files if "esquema" in f['name'].lower()]
+
+        files_fotos_ordenados = sorted(files_fotos, key=lambda f: obtener_numero_archivo(f['name']))
+        files_esquemas_ordenados = sorted(files_esquemas, key=lambda f: obtener_numero_archivo(f['name']))
+
+        # Procesar Fotografías Normales
+        for index, file in enumerate(files_fotos_ordenados):
+            request = drive_service.files().get_media(fileId=file['id'])
             fh = BytesIO()
             downloader = MediaIoBaseDownload(fh, request)
             done = False
             while not done:
                 _, done = downloader.next_chunk()
-
             fh.seek(0)
-            img_bytes = fh.read()
-
-            num_extraido = obtener_numero_archivo(file_name)
+            
+            num_extraido = obtener_numero_archivo(file['name'])
             caption_default = f"{num_extraido}: vista general de equipo" if num_extraido != 9999 else f"{index+1}: detalle de inspección"
-            imagenes.append((img_bytes, caption_default))
+            fotos.append((fh.read(), caption_default))
 
-        return imagenes, f"✅ Se cargaron exitosamente {len(imagenes)} imágenes desde Google Drive."
+        # Procesar Esquemas
+        for index, file in enumerate(files_esquemas_ordenados):
+            request = drive_service.files().get_media(fileId=file['id'])
+            fh = BytesIO()
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+            fh.seek(0)
+            
+            caption_esquema = f"Esquema {index+1}: Ubicación de hallazgos y sectores afectados"
+            esquemas.append((fh.read(), caption_esquema))
+
+        msg = f"✅ Se cargaron exitosamente {len(fotos)} fotografías y {len(esquemas)} esquemas desde Google Drive."
+        return fotos, esquemas, msg
 
     except Exception as e:
-        return [], f"⚠️ Error al acceder a la carpeta de Google Drive: {str(e)}"
+        return [], [], f"⚠️ Error al acceder a la carpeta de Google Drive: {str(e)}"
 
 
 # =========================================================
@@ -330,10 +347,10 @@ def cargar_datos_informe(num_informe_sel):
                 secciones_dict = {int(k): v for k, v in secciones_json.items()}
                 drive_link = f[11] if len(f) > 11 else ""
 
-                # Si tiene link de drive guardado, se descargan las fotos automáticamente
                 imgs_recuperadas = []
+                esquemas_recuperados = []
                 if drive_link:
-                    imgs_recuperadas, _ = obtener_imagenes_desde_drive_folder(drive_link)
+                    imgs_recuperadas, esquemas_recuperados, _ = obtener_imagenes_desde_drive_folder(drive_link)
 
                 return {
                     "num_informe": f[0],
@@ -348,7 +365,8 @@ def cargar_datos_informe(num_informe_sel):
                     "secciones_dinamicas": secciones_dict,
                     "inspector": f[10] if len(f) > 10 else "",
                     "drive_link": drive_link,
-                    "imagenes_procesadas": imgs_recuperadas
+                    "imagenes_procesadas": imgs_recuperadas,
+                    "esquemas_procesados": esquemas_recuperados
                 }
     except Exception as e:
         st.error(f"Error al cargar el informe: {e}")
@@ -397,7 +415,7 @@ def dibujar_plantilla_pdf(canvas, doc):
     canvas.restoreState()
 
 
-def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imagenes_procesadas, inspector_firma):
+def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imagenes_procesadas, esquemas_procesados, inspector_firma):
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -460,6 +478,7 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
                 story.append(Paragraph(titulo_sub, subsec_heading_style))
                 story.append(Paragraph(sub['contenido'] if sub['contenido'] else "-", text_style))
 
+    # 5. REGISTROS FOTOGRÁFICOS
     story.append(PageBreak())
     story.append(Paragraph("5. REGISTROS FOTOGRÁFICOS", sec_heading_style))
     story.append(Spacer(1, 2))
@@ -496,6 +515,29 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
             ]))
             story.append(t_pair)
 
+    # 6. ESQUEMA DE EQUIPO Y SECTORES CON DAÑOS (PÁGINA COMPLETA POR FOTO)
+    if esquemas_procesados:
+        story.append(PageBreak())
+        story.append(Paragraph("6. ESQUEMA DE EQUIPO Y SECTORES CON DAÑOS", sec_heading_style))
+        story.append(Spacer(1, 6))
+
+        for idx, (esq_bytes, label_esq) in enumerate(esquemas_procesados, start=1):
+            if idx > 1:
+                story.append(PageBreak())
+                story.append(Paragraph(f"6. ESQUEMA DE EQUIPO Y SECTORES CON DAÑOS (Continuación - Esquema {idx})", sec_heading_style))
+                story.append(Spacer(1, 6))
+
+            # Tamaño grande aprovechando el ancho de la página (Ancho máximo ~18.5 cm, Alto ~13.5 cm)
+            img_esq = RLImage(BytesIO(esq_bytes), width=18.5*cm, height=13.5*cm)
+            t_esq = Table([[img_esq], [Paragraph(f"<b>{label_esq}</b>", cell_body)]], colWidths=[552])
+            t_esq.setStyle(TableStyle([
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('PADDING', (0,0), (-1,-1), 2),
+            ]))
+            story.append(t_esq)
+            story.append(Spacer(1, 10))
+
     story.append(Spacer(1, 6))
     if inspector_firma:
         story.append(Paragraph(f"<b>Generado por:</b> {inspector_firma}", firma_style))
@@ -505,7 +547,7 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
     return buffer
 
 
-def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imagenes_procesadas, inspector_firma):
+def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imagenes_procesadas, esquemas_procesados, inspector_firma):
     doc = Document()
     section = doc.sections[0]
     section.top_margin = Inches(0.8)
@@ -599,6 +641,7 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
                 r_cont.font.size = Pt(8.5)
                 r_cont.font.color.rgb = RGBColor(0x1F, 0x29, 0x37)
 
+    # 5. REGISTROS FOTOGRÁFICOS
     doc.add_page_break()
     p_sec5 = doc.add_paragraph()
     r_sec5 = p_sec5.add_run("5. REGISTROS FOTOGRÁFICOS")
@@ -636,6 +679,29 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
                 r2_sub.font.bold = True
                 r2_sub.font.size = Pt(8)
 
+    # 6. ESQUEMAS EN WORD
+    if esquemas_procesados:
+        doc.add_page_break()
+        p_sec6 = doc.add_paragraph()
+        r_sec6 = p_sec6.add_run("6. ESQUEMA DE EQUIPO Y SECTORES CON DAÑOS")
+        r_sec6.font.bold = True
+        r_sec6.font.size = Pt(11)
+        r_sec6.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
+
+        for idx, (esq_data, label_esq) in enumerate(esquemas_procesados, start=1):
+            if idx > 1:
+                doc.add_page_break()
+
+            p_esq = doc.add_paragraph()
+            p_esq.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p_esq.add_run().add_picture(BytesIO(esq_data), width=Inches(6.8))
+
+            p_esq_sub = doc.add_paragraph()
+            p_esq_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r_esq_sub = p_esq_sub.add_run(str(label_esq))
+            r_esq_sub.font.bold = True
+            r_esq_sub.font.size = Pt(9)
+
     if inspector_firma:
         p_firma = doc.add_paragraph()
         p_firma.alignment = WD_ALIGN_PARAGRAPH.RIGHT
@@ -660,6 +726,8 @@ df_equipos = cargar_base_equipos()
 
 if "imagenes_cargadas_resguardo" not in st.session_state:
     st.session_state["imagenes_cargadas_resguardo"] = []
+if "esquemas_cargados_resguardo" not in st.session_state:
+    st.session_state["esquemas_cargados_resguardo"] = []
 
 # CARGAR O ELIMINAR INFORMES PREVIAMENTE RESGUARDADOS
 st.markdown("### 📂 Cargar o Eliminar Informe Resguardado")
@@ -701,6 +769,7 @@ if btn_cargar:
                     st.session_state[f"cont_{s_num}_{idx}"] = sub.get("contenido", "")
 
             st.session_state["imagenes_cargadas_resguardo"] = datos_cargados["imagenes_procesadas"]
+            st.session_state["esquemas_cargados_resguardo"] = datos_cargados["esquemas_procesados"]
             st.success(f"¡Informe '{informe_sel}' cargado correctamente!")
             st.rerun()
     else:
@@ -814,39 +883,53 @@ for num_sec, tit_sec in secciones_base.items():
             "subpuntos": subpuntos_list
         }
 
-# REGISTROS FOTOGRÁFICOS
+# REGISTROS FOTOGRÁFICOS Y ESQUEMAS
 st.markdown("---")
-st.markdown("#### 5. Registros Fotográficos")
+st.markdown("#### 5. Registros Fotográficos y 6. Esquemas")
 
 imagenes_procesadas = []
+esquemas_procesados = []
 
 drive_folder_input = st.text_input(
-    "Pegar URL o ID de Carpeta en Google Drive con las fotos:", 
+    "Pegar URL o ID de Carpeta en Google Drive con las fotos y esquemas:", 
     key="drive_link",
     placeholder="Ej: https://drive.google.com/drive/folders/1RPXZ8oUmM2eC1U6p3u3FlepKg6hvRLQC"
 )
 
-if st.button("📥 CARGAR FOTOS DESDE GOOGLE DRIVE", use_container_width=True):
+if st.button("📥 CARGAR ARCHIVOS DESDE GOOGLE DRIVE", use_container_width=True):
     if drive_folder_input:
-        with st.spinner("Descargando fotos desde Google Drive..."):
-            imgs_drive, msg_drive = obtener_imagenes_desde_drive_folder(drive_folder_input)
-            if imgs_drive:
+        with st.spinner("Descargando fotografías y esquemas desde Google Drive..."):
+            imgs_drive, esq_drive, msg_drive = obtener_imagenes_desde_drive_folder(drive_folder_input)
+            if imgs_drive or esq_drive:
                 st.session_state["imagenes_cargadas_resguardo"] = imgs_drive
+                st.session_state["esquemas_cargados_resguardo"] = esq_drive
                 st.success(msg_drive)
                 st.rerun()
             else:
                 st.error(msg_drive)
 
+# Despliegue de Fotografías Normales
 if st.session_state.get("imagenes_cargadas_resguardo"):
+    st.markdown("##### 📸 5. Registros Fotográficos")
     imgs_res = st.session_state["imagenes_cargadas_resguardo"]
-    st.info(f"📸 Se cargaron {len(imgs_res)} imágenes.")
-
+    
     cols = st.columns(3)
     for index, (img_bytes, pie_orig) in enumerate(imgs_res):
         with cols[index % 3]:
             st.image(img_bytes, caption=f"Foto {index+1}", use_container_width=True)
             pie_foto = st.text_input(f"Pie de foto {index+1}:", value=pie_orig, key=f"img_resguardada_{index}")
             imagenes_procesadas.append((img_bytes, pie_foto))
+
+# Despliegue de Esquemas a Tamaño Completo
+if st.session_state.get("esquemas_cargados_resguardo"):
+    st.markdown("---")
+    st.markdown("##### 📐 6. Esquema de Equipo y Sectores con Daños")
+    esq_res = st.session_state["esquemas_cargados_resguardo"]
+    
+    for index, (esq_bytes, pie_esq_orig) in enumerate(esq_res):
+        st.image(esq_bytes, caption=f"Esquema {index+1}", use_container_width=True)
+        pie_esq = st.text_input(f"Leyenda / Nombre ({index+1}):", value=pie_esq_orig, key=f"esq_resguardado_{index}")
+        esquemas_procesados.append((esq_bytes, pie_esq))
 
 # RESPONSABLE DEL INFORME
 st.markdown("---")
@@ -885,7 +968,7 @@ st.markdown("#### Exportar Informe Final")
 col_btn_p, col_btn_w = st.columns(2)
 
 with col_btn_p:
-    pdf_buffer = generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imagenes_procesadas, inspector_firma)
+    pdf_buffer = generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imagenes_procesadas, esquemas_procesados, inspector_firma)
     st.download_button(
         label="📄 Descargar Informe en PDF (.pdf)",
         data=pdf_buffer,
@@ -895,7 +978,7 @@ with col_btn_p:
     )
 
 with col_btn_w:
-    word_buffer = generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imagenes_procesadas, inspector_firma)
+    word_buffer = generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imagenes_procesadas, esquemas_procesados, inspector_firma)
     st.download_button(
         label="📝 Descargar Informe en Word (.docx)",
         data=word_buffer,
