@@ -204,13 +204,15 @@ def obtener_imagenes_desde_drive_folder(folder_input):
             
             file_name = file['name']
             num_extraido = obtener_numero_archivo(file_name)
+            num_foto_str = str(num_extraido) if num_extraido != 9999 else str(index + 1)
+            
             name_without_ext = re.sub(r'\.[a-zA-Z0-9]+$', '', file_name)
             match_texto = re.search(r'_(.+)$', name_without_ext)
             
             if match_texto:
-                caption = match_texto.group(1).strip()
+                caption = f"Foto {num_foto_str}: {match_texto.group(1).strip()}"
             else:
-                caption = f"{num_extraido}: vista general de equipo" if num_extraido != 9999 else f"{index+1}: detalle de inspección"
+                caption = f"Foto {num_foto_str}: vista general de equipo" if num_extraido != 9999 else f"Foto {num_foto_str}: detalle de inspección"
                 
             fotos.append((fh.read(), caption))
 
@@ -228,7 +230,7 @@ def obtener_imagenes_desde_drive_folder(folder_input):
             match_texto = re.search(r'_(.+)$', name_without_ext)
             
             if match_texto:
-                caption = match_texto.group(1).strip()
+                caption = f"Esquema {index+1}: {match_texto.group(1).strip()}"
             else:
                 caption = f"Esquema {index+1}: Ubicación de hallazgos y sectores afectados"
                 
@@ -462,7 +464,7 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
     sec_heading_style = ParagraphStyle('SecHeader', parent=styles['Heading2'], fontSize=11, leading=13, textColor=colors.HexColor('#1E3A8A'), fontName='Helvetica-Bold', spaceBefore=10, spaceAfter=4)
     subsec_heading_style = ParagraphStyle('SubSecHeader', parent=styles['Heading3'], fontSize=9.5, leading=11, textColor=colors.HexColor('#619b40'), fontName='Helvetica-Bold', spaceBefore=4, spaceAfter=2)
     text_style = ParagraphStyle('TextStyle', parent=styles['Normal'], fontSize=8.5, leading=11, textColor=colors.HexColor('#1F2937'), spaceAfter=6)
-    cell_body = ParagraphStyle('CB', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#1F2937'))
+    cell_body = ParagraphStyle('CB', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#1F2937'), spaceBefore=0, spaceAfter=0)
     firma_style = ParagraphStyle('FirmaStyle', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.HexColor('#1E3A8A'), fontName='Helvetica-Bold', alignment=2)
 
     story = [
@@ -522,13 +524,13 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
 
             row_cells = []
             img_bytes1, label1 = imagenes_procesadas[i]
-            img_obj1 = RLImage(BytesIO(img_bytes1), width=9.4*cm, height=6.2*cm)
+            img_obj1 = RLImage(BytesIO(img_bytes1), width=9.33*cm, height=7.0*cm)
             cell1 = [img_obj1, Paragraph(f"<font size=7><b>{label1}</b></font>", cell_body)]
             row_cells.append(cell1)
 
             if i + 1 < len(imagenes_procesadas):
                 img_bytes2, label2 = imagenes_procesadas[i+1]
-                img_obj2 = RLImage(BytesIO(img_bytes2), width=9.4*cm, height=6.2*cm)
+                img_obj2 = RLImage(BytesIO(img_bytes2), width=9.33*cm, height=7.0*cm)
                 cell2 = [img_obj2, Paragraph(f"<font size=7><b>{label2}</b></font>", cell_body)]
                 row_cells.append(cell2)
             else:
@@ -538,9 +540,9 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
             t_pair.setStyle(TableStyle([
                 ('ALIGN', (0,0), (-1,-1), 'CENTER'),
                 ('VALIGN', (0,0), (-1,-1), 'TOP'),
-                ('LEFTPADDING', (0,0), (-1,-1), 1),
-                ('RIGHTPADDING', (0,0), (-1,-1), 1),
-                ('TOPPADDING', (0,0), (-1,-1), 1),
+                ('LEFTPADDING', (0,0), (-1,-1), 0),
+                ('RIGHTPADDING', (0,0), (-1,-1), 0),
+                ('TOPPADDING', (0,0), (-1,-1), 0),
                 ('BOTTOMPADDING', (0,0), (-1,-1), 2),
             ]))
             story.append(t_pair)
@@ -578,6 +580,13 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
 
 def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imagenes_procesadas, esquemas_procesados, inspector_firma):
     doc = Document()
+    
+    # Configuración de fuente base por defecto: Calibri 11pt
+    style_normal = doc.styles['Normal']
+    font_normal = style_normal.font
+    font_normal.name = 'Calibri'
+    font_normal.size = Pt(11)
+
     section = doc.sections[0]
     section.top_margin = Inches(0.9)
     section.bottom_margin = Inches(0.9)
@@ -619,20 +628,20 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     p_left = cell_left.paragraphs[0]
     p_left.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run_ft_1 = p_left.add_run("SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.\n")
-    run_ft_1.font.size = Pt(7)
-    run_ft_1.font.name = "Helvetica"
+    run_ft_1.font.name = "Calibri"
+    run_ft_1.font.size = Pt(7.5)
     run_ft_1.font.color.rgb = RGBColor(107, 114, 128)
 
     run_ft_2 = p_left.add_run("CONTRATO N° AC 31104857")
-    run_ft_2.font.size = Pt(7)
-    run_ft_2.font.name = "Helvetica"
+    run_ft_2.font.name = "Calibri"
+    run_ft_2.font.size = Pt(7.5)
     run_ft_2.font.color.rgb = RGBColor(107, 114, 128)
 
     p_right = cell_right.paragraphs[0]
     p_right.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     run_ft_3 = p_right.add_run("Pág. ")
-    run_ft_3.font.size = Pt(7)
-    run_ft_3.font.name = "Helvetica"
+    run_ft_3.font.name = "Calibri"
+    run_ft_3.font.size = Pt(7.5)
     run_ft_3.font.color.rgb = RGBColor(107, 114, 128)
     agregar_numero_pagina_word(run_ft_3)
 
@@ -644,6 +653,7 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     p_title = doc.add_paragraph()
     p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run_title = p_title.add_run("INFORME DE INSPECCIÓN VISUAL")
+    run_title.font.name = "Calibri"
     run_title.font.bold = True
     run_title.font.size = Pt(15)
     run_title.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
@@ -651,7 +661,8 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     p_sub = doc.add_paragraph()
     p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run_sub = p_sub.add_run("CONTROL DE INSPECCIÓN • CALIDAD • TRAZABILIDAD")
-    run_sub.font.size = Pt(9)
+    run_sub.font.name = "Calibri"
+    run_sub.font.size = Pt(9.5)
     run_sub.font.color.rgb = RGBColor(0x4B, 0x55, 0x63)
 
     table = doc.add_table(rows=5, cols=4)
@@ -670,36 +681,42 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
         set_cell_background(row.cells[0], "F3F4F6")
         p = row.cells[0].paragraphs[0]
         r = p.add_run(k1)
+        r.font.name = "Calibri"
         r.font.bold = True
-        r.font.size = Pt(8.5)
+        r.font.size = Pt(10)
 
         p = row.cells[1].paragraphs[0]
         r = p.add_run(str(v1))
-        r.font.size = Pt(8.5)
+        r.font.name = "Calibri"
+        r.font.size = Pt(10)
 
         set_cell_background(row.cells[2], "F3F4F6")
         p = row.cells[2].paragraphs[0]
         r = p.add_run(k2)
+        r.font.name = "Calibri"
         r.font.bold = True
-        r.font.size = Pt(8.5)
+        r.font.size = Pt(10)
 
         p = row.cells[3].paragraphs[0]
         r = p.add_run(str(v2))
-        r.font.size = Pt(8.5)
+        r.font.name = "Calibri"
+        r.font.size = Pt(10)
 
     row_alcance = table.rows[4]
     set_cell_background(row_alcance.cells[0], "F3F4F6")
     p0 = row_alcance.cells[0].paragraphs[0]
     r0 = p0.add_run("ALCANCE:")
+    r0.font.name = "Calibri"
     r0.font.bold = True
-    r0.font.size = Pt(8.5)
+    r0.font.size = Pt(10)
 
     cell_span = row_alcance.cells[1]
     cell_span.merge(row_alcance.cells[2])
     cell_span.merge(row_alcance.cells[3])
     p_alc = cell_span.paragraphs[0]
     r_alc = p_alc.add_run(str(datos_encabezado['alcance']))
-    r_alc.font.size = Pt(8.5)
+    r_alc.font.name = "Calibri"
+    r_alc.font.size = Pt(10)
 
     doc.add_paragraph()
 
@@ -708,8 +725,9 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
         if subpuntos:
             p_sec = doc.add_paragraph()
             r_sec = p_sec.add_run(f"{sec_num}. {sec_info['titulo']}")
+            r_sec.font.name = "Calibri"
             r_sec.font.bold = True
-            r_sec.font.size = Pt(11)
+            r_sec.font.size = Pt(12)
             r_sec.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
 
             for idx, sub in enumerate(subpuntos, start=1):
@@ -718,33 +736,36 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
 
                 p_subsec = doc.add_paragraph()
                 r_subsec = p_subsec.add_run(titulo_sub)
+                r_subsec.font.name = "Calibri"
                 r_subsec.font.bold = True
-                r_subsec.font.size = Pt(9.5)
+                r_subsec.font.size = Pt(11)
                 r_subsec.font.color.rgb = RGBColor(0x61, 0x9B, 0x40)
 
                 p_cont = doc.add_paragraph()
                 r_cont = p_cont.add_run(sub['contenido'] if sub['contenido'] else "-")
-                r_cont.font.size = Pt(8.5)
+                r_cont.font.name = "Calibri"
+                r_cont.font.size = Pt(11)
                 r_cont.font.color.rgb = RGBColor(0x1F, 0x29, 0x37)
 
     # 5. REGISTROS FOTOGRÁFICOS (3 FILAS X 2 COLUMNAS = 6 FOTOS POR PÁGINA)
     doc.add_page_break()
     p_sec5 = doc.add_paragraph()
     r_sec5 = p_sec5.add_run("5. REGISTROS FOTOGRÁFICOS")
+    r_sec5.font.name = "Calibri"
     r_sec5.font.bold = True
-    r_sec5.font.size = Pt(11)
+    r_sec5.font.size = Pt(12)
     r_sec5.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
 
     if imagenes_procesadas:
         total_fotos = len(imagenes_procesadas)
-        # Procesar en bloques de máximo 6 fotos por página
         for i in range(0, total_fotos, 6):
             if i > 0:
                 doc.add_page_break()
                 p_sec5_cont = doc.add_paragraph()
                 r_sec5_cont = p_sec5_cont.add_run("5. REGISTROS FOTOGRÁFICOS (Continuación)")
+                r_sec5_cont.font.name = "Calibri"
                 r_sec5_cont.font.bold = True
-                r_sec5_cont.font.size = Pt(11)
+                r_sec5_cont.font.size = Pt(12)
                 r_sec5_cont.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
 
             bloque_fotos = imagenes_procesadas[i:i+6]
@@ -754,36 +775,50 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
             for j in range(0, len(bloque_fotos), 2):
                 row_cells = img_table.add_row().cells
 
+                # Foto 1
                 img_data1, label1 = bloque_fotos[j]
                 p1 = row_cells[0].paragraphs[0]
                 p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                p1.add_run().add_picture(BytesIO(img_data1), width=Inches(3.2))
+                p1.paragraph_format.space_before = Pt(0)
+                p1.paragraph_format.space_after = Pt(0)
+                # Ancho: 9.33cm (3.673 in), Alto: 7cm (2.755 in)
+                p1.add_run().add_picture(BytesIO(img_data1), width=Inches(3.673), height=Inches(2.755))
 
                 p1_sub = row_cells[0].add_paragraph()
                 p1_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p1_sub.paragraph_format.space_before = Pt(0)
+                p1_sub.paragraph_format.space_after = Pt(2)
                 r1_sub = p1_sub.add_run(str(label1))
+                r1_sub.font.name = "Calibri"
                 r1_sub.font.bold = True
-                r1_sub.font.size = Pt(8)
+                r1_sub.font.size = Pt(9.5)
 
+                # Foto 2 (si existe en la fila)
                 if j + 1 < len(bloque_fotos):
                     img_data2, label2 = bloque_fotos[j+1]
                     p2 = row_cells[1].paragraphs[0]
                     p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    p2.add_run().add_picture(BytesIO(img_data2), width=Inches(3.2))
+                    p2.paragraph_format.space_before = Pt(0)
+                    p2.paragraph_format.space_after = Pt(0)
+                    p2.add_run().add_picture(BytesIO(img_data2), width=Inches(3.673), height=Inches(2.755))
 
                     p2_sub = row_cells[1].add_paragraph()
                     p2_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    p2_sub.paragraph_format.space_before = Pt(0)
+                    p2_sub.paragraph_format.space_after = Pt(2)
                     r2_sub = p2_sub.add_run(str(label2))
+                    r2_sub.font.name = "Calibri"
                     r2_sub.font.bold = True
-                    r2_sub.font.size = Pt(8)
+                    r2_sub.font.size = Pt(9.5)
 
     # 6. ESQUEMAS EN WORD
     if esquemas_procesados:
         doc.add_page_break()
         p_sec6 = doc.add_paragraph()
         r_sec6 = p_sec6.add_run("6. ESQUEMA DE EQUIPO")
+        r_sec6.font.name = "Calibri"
         r_sec6.font.bold = True
-        r_sec6.font.size = Pt(11)
+        r_sec6.font.size = Pt(12)
         r_sec6.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
 
         for idx, (esq_data, label_esq) in enumerate(esquemas_procesados, start=1):
@@ -797,15 +832,17 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
             p_esq_sub = doc.add_paragraph()
             p_esq_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
             r_esq_sub = p_esq_sub.add_run(str(label_esq))
+            r_esq_sub.font.name = "Calibri"
             r_esq_sub.font.bold = True
-            r_esq_sub.font.size = Pt(9)
+            r_esq_sub.font.size = Pt(10)
 
     if inspector_firma:
         p_firma = doc.add_paragraph()
         p_firma.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         p_run = p_firma.add_run(f"\nElaborado por: {inspector_firma}")
+        p_run.font.name = "Calibri"
         p_run.font.bold = True
-        p_run.font.size = Pt(9.5)
+        p_run.font.size = Pt(11)
         p_run.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
 
     buffer = BytesIO()
