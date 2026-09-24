@@ -435,15 +435,17 @@ def dibujar_plantilla_pdf(canvas, doc):
         try:
             img_stream = BytesIO(logo_bytes)
             img = ImageReader(img_stream)
-            canvas.drawImage(img, 30, letter[1] - (1.8 * cm) - 35, width=120, height=45, preserveAspectRatio=True, mask='auto')
+            # Logo posicionado más arriba
+            canvas.drawImage(img, 30, letter[1] - (1.2 * cm) - 35, width=120, height=45, preserveAspectRatio=True, mask='auto')
         except Exception:
             pass
 
-    canvas.setFont("Helvetica", 7)
+    # Pie de página más pequeño
+    canvas.setFont("Helvetica", 6)
     canvas.setFillColor(colors.HexColor("#6B7280"))
-    canvas.drawCentredString(letter[0] / 2.0, 26, "SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.")
-    canvas.drawCentredString(letter[0] / 2.0, 16, "CONTRATO N° AC 31104857")
-    canvas.drawRightString(letter[0] - 30, 16, f"Pág. {canvas.getPageNumber()}")
+    canvas.drawCentredString(letter[0] / 2.0, 18, "SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.")
+    canvas.drawCentredString(letter[0] / 2.0, 10, "CONTRATO N° AC 31104857")
+    canvas.drawRightString(letter[0] - 30, 10, f"Pág. {canvas.getPageNumber()}")
     canvas.restoreState()
 
 
@@ -454,8 +456,8 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
         pagesize=letter,
         rightMargin=30,
         leftMargin=30,
-        topMargin=2.5 * cm,
-        bottomMargin=2.0 * cm
+        topMargin=1.5 * cm,
+        bottomMargin=1.2 * cm
     )
 
     styles = getSampleStyleSheet()
@@ -463,7 +465,7 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
     subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=9, leading=11, textColor=colors.HexColor('#4B5563'), alignment=1, spaceAfter=10)
     sec_heading_style = ParagraphStyle('SecHeader', parent=styles['Heading2'], fontSize=11, leading=13, textColor=colors.HexColor('#1E3A8A'), fontName='Helvetica-Bold', spaceBefore=10, spaceAfter=4, keepWithNext=True)
     subsec_heading_style = ParagraphStyle('SubSecHeader', parent=styles['Heading3'], fontSize=9.5, leading=11, textColor=colors.HexColor('#619b40'), fontName='Helvetica-Bold', spaceBefore=4, spaceAfter=2, keepWithNext=True)
-    text_style = ParagraphStyle('TextStyle', parent=styles['Normal'], fontSize=8.5, leading=11, textColor=colors.HexColor('#1F2937'), alignment=4, spaceAfter=6)
+    text_style = ParagraphStyle('TextStyle', parent=styles['Normal'], fontSize=8.5, leading=11, textColor=colors.HexColor('#1F2937'), spaceAfter=6)
     cell_body = ParagraphStyle('CB', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#1F2937'), spaceBefore=0, spaceAfter=0)
     firma_style = ParagraphStyle('FirmaStyle', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.HexColor('#1E3A8A'), fontName='Helvetica-Bold', alignment=2)
 
@@ -587,18 +589,21 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     font_normal.name = 'Calibri'
     font_normal.size = Pt(11)
 
+    # Márgenes superiores e inferiores reducidos a 0.5 in (1.27 cm) para aprovechar espacio
     section = doc.sections[0]
-    section.top_margin = Inches(0.9)
-    section.bottom_margin = Inches(0.9)
+    section.top_margin = Inches(0.5)
+    section.bottom_margin = Inches(0.5)
     section.left_margin = Inches(0.8)
     section.right_margin = Inches(0.8)
 
     # =========================================================
-    # ENCABEZADO WORD (LOGO PARTE SUPERIOR IZQUIERDA)
+    # ENCABEZADO WORD (LOGO PARTE SUPERIOR IZQUIERDA Y MÁS ARRIBA)
     # =========================================================
     header = section.header
     header_p = header.paragraphs[0]
     header_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    header_p.paragraph_format.space_before = Pt(0)
+    header_p.paragraph_format.space_after = Pt(0)
     
     logo_bytes = obtener_bytes_imagen(URL_LOGO_GITHUB)
     if logo_bytes:
@@ -608,7 +613,7 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
             pass
 
     # =========================================================
-    # PIE DE PÁGINA WORD (TABLA TRANSPARENTE: TEXTO CENTRO | N° PÁG DERECHA)
+    # PIE DE PÁGINA WORD (MÁS PEQUEÑO)
     # =========================================================
     footer = section.footer
     footer_p = footer.paragraphs[0]
@@ -627,21 +632,28 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
 
     p_left = cell_left.paragraphs[0]
     p_left.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_left.paragraph_format.space_before = Pt(0)
+    p_left.paragraph_format.space_after = Pt(0)
+    
+    # Texto de pie de página en 6pt
     run_ft_1 = p_left.add_run("SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.\n")
     run_ft_1.font.name = "Calibri"
-    run_ft_1.font.size = Pt(7.5)
+    run_ft_1.font.size = Pt(6)
     run_ft_1.font.color.rgb = RGBColor(107, 114, 128)
 
     run_ft_2 = p_left.add_run("CONTRATO N° AC 31104857")
     run_ft_2.font.name = "Calibri"
-    run_ft_2.font.size = Pt(7.5)
+    run_ft_2.font.size = Pt(6)
     run_ft_2.font.color.rgb = RGBColor(107, 114, 128)
 
     p_right = cell_right.paragraphs[0]
     p_right.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p_right.paragraph_format.space_before = Pt(0)
+    p_right.paragraph_format.space_after = Pt(0)
+    
     run_ft_3 = p_right.add_run("Pág. ")
     run_ft_3.font.name = "Calibri"
-    run_ft_3.font.size = Pt(7.5)
+    run_ft_3.font.size = Pt(6)
     run_ft_3.font.color.rgb = RGBColor(107, 114, 128)
     agregar_numero_pagina_word(run_ft_3)
 
@@ -743,8 +755,8 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
                 r_subsec.font.size = Pt(11)
                 r_subsec.font.color.rgb = RGBColor(0x61, 0x9B, 0x40)
 
+                # Párrafo de contenido sin justificar (alineación izquierda por defecto)
                 p_cont = doc.add_paragraph()
-                p_cont.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
                 r_cont = p_cont.add_run(sub['contenido'] if sub['contenido'] else "-")
                 r_cont.font.name = "Calibri"
                 r_cont.font.size = Pt(11)
