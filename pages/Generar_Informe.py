@@ -440,27 +440,20 @@ def guardar_resguardo_informe(
     imagenes_procesadas,
     inspector_firma
 ):
-
     """
     Sube fotos a Google Drive personal y guarda
     los enlaces y metadata en Google Sheets.
     """
 
     try:
-
         ws = obtener_o_crear_hoja_historial()
 
-        num_inf = (
-            datos_encabezado["num_informe"]
-            .strip()
-        )
+        num_inf = datos_encabezado["num_informe"].strip()
 
         if not num_inf:
-
             return (
                 False,
-                "Debe ingresar un N.º DE INFORME "
-                "para poder resguardar."
+                "Debe ingresar un N.º DE INFORME para poder resguardar."
             )
 
         # =================================================
@@ -469,40 +462,23 @@ def guardar_resguardo_informe(
 
         fotos_guardadas = []
 
-        for idx, (
-            img_bytes,
-            pie
-        ) in enumerate(
+        for idx, (img_bytes, pie) in enumerate(
             imagenes_procesadas,
             start=1
         ):
-
-            nombre_foto = (
-                f"{num_inf}_foto_{idx}.jpg"
-            )
+            nombre_foto = f"{num_inf}_foto_{idx}.jpg"
 
             url_drive = subir_imagen_a_drive(
                 nombre_foto,
                 img_bytes
             )
 
-            if url_drive:
-
-                fotos_guardadas.append(
-                    {
-                        "url": url_drive,
-                        "pie": pie
-                    }
-                )
-
-            else:
-
-                fotos_guardadas.append(
-                    {
-                        "url": "",
-                        "pie": pie
-                    }
-                )
+            fotos_guardadas.append(
+                {
+                    "url": url_drive if url_drive else "",
+                    "pie": pie
+                }
+            )
 
         # =================================================
         # PREPARAR INFORMACIÓN PARA GOOGLE SHEETS
@@ -534,6 +510,7 @@ def guardar_resguardo_informe(
             str(datos_encabezado["motivo"]),
             str(datos_encabezado["alcance"]),
             secciones_json,
+            str(inspector_firma),
             fotos_json
         ]
 
@@ -548,7 +525,6 @@ def guardar_resguardo_informe(
         )
 
     except Exception as e:
-
         return (
             False,
             f"Error al guardar el informe: {e}"
