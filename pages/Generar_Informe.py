@@ -589,14 +589,16 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     font_normal.name = 'Calibri'
     font_normal.size = Pt(11)
 
+    # Margen superior e inferior muy reducido (0.2 in / ~0.5 cm) para posicionar logo y contenido más arriba
     section = doc.sections[0]
-    section.top_margin = Inches(0.3)
-    section.bottom_margin = Inches(0.5)
+    section.top_margin = Inches(0.2)
+    section.bottom_margin = Inches(0.4)
     section.left_margin = Inches(0.8)
     section.right_margin = Inches(0.8)
+    section.header_distance = Inches(0.1)
 
     # =========================================================
-    # ENCABEZADO WORD (LOGO ESQUINA SUPERIOR DERECHA)
+    # ENCABEZADO WORD (LOGO LO MÁS ARRIBA POSIBLE)
     # =========================================================
     header = section.header
     header_p = header.paragraphs[0]
@@ -662,6 +664,8 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     # =========================================================
     p_title = doc.add_paragraph()
     p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_title.paragraph_format.space_before = Pt(0)
+    p_title.paragraph_format.space_after = Pt(4)
     run_title = p_title.add_run("INFORME DE INSPECCIÓN VISUAL")
     run_title.font.name = "Calibri"
     run_title.font.bold = True
@@ -683,24 +687,32 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
         row = table.rows[row_idx]
         set_cell_background(row.cells[0], "F3F4F6")
         p = row.cells[0].paragraphs[0]
+        p.paragraph_format.space_before = Pt(1)
+        p.paragraph_format.space_after = Pt(1)
         r = p.add_run(k1)
         r.font.name = "Calibri"
         r.font.bold = True
         r.font.size = Pt(10)
 
         p = row.cells[1].paragraphs[0]
+        p.paragraph_format.space_before = Pt(1)
+        p.paragraph_format.space_after = Pt(1)
         r = p.add_run(str(v1))
         r.font.name = "Calibri"
         r.font.size = Pt(10)
 
         set_cell_background(row.cells[2], "F3F4F6")
         p = row.cells[2].paragraphs[0]
+        p.paragraph_format.space_before = Pt(1)
+        p.paragraph_format.space_after = Pt(1)
         r = p.add_run(k2)
         r.font.name = "Calibri"
         r.font.bold = True
         r.font.size = Pt(10)
 
         p = row.cells[3].paragraphs[0]
+        p.paragraph_format.space_before = Pt(1)
+        p.paragraph_format.space_after = Pt(1)
         r = p.add_run(str(v2))
         r.font.name = "Calibri"
         r.font.size = Pt(10)
@@ -708,6 +720,8 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     row_alcance = table.rows[4]
     set_cell_background(row_alcance.cells[0], "F3F4F6")
     p0 = row_alcance.cells[0].paragraphs[0]
+    p0.paragraph_format.space_before = Pt(1)
+    p0.paragraph_format.space_after = Pt(1)
     r0 = p0.add_run("ALCANCE:")
     r0.font.name = "Calibri"
     r0.font.bold = True
@@ -717,17 +731,24 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     cell_span.merge(row_alcance.cells[2])
     cell_span.merge(row_alcance.cells[3])
     p_alc = cell_span.paragraphs[0]
+    p_alc.paragraph_format.space_before = Pt(1)
+    p_alc.paragraph_format.space_after = Pt(1)
     r_alc = p_alc.add_run(str(datos_encabezado['alcance']))
     r_alc.font.name = "Calibri"
     r_alc.font.size = Pt(10)
 
-    doc.add_paragraph()
+    # Espacio compacto tras la tabla
+    p_spacer = doc.add_paragraph()
+    p_spacer.paragraph_format.space_before = Pt(2)
+    p_spacer.paragraph_format.space_after = Pt(2)
 
     for sec_num, sec_info in secciones_dinamicas.items():
         subpuntos = sec_info['subpuntos']
         if subpuntos:
             p_sec = doc.add_paragraph()
             p_sec.paragraph_format.keep_with_next = True
+            p_sec.paragraph_format.space_before = Pt(6)
+            p_sec.paragraph_format.space_after = Pt(2)
             r_sec = p_sec.add_run(f"{sec_num}. {sec_info['titulo']}")
             r_sec.font.name = "Calibri"
             r_sec.font.bold = True
@@ -740,6 +761,8 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
 
                 p_subsec = doc.add_paragraph()
                 p_subsec.paragraph_format.keep_with_next = True
+                p_subsec.paragraph_format.space_before = Pt(3)
+                p_subsec.paragraph_format.space_after = Pt(1)
                 r_subsec = p_subsec.add_run(titulo_sub)
                 r_subsec.font.name = "Calibri"
                 r_subsec.font.bold = True
@@ -747,6 +770,8 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
                 r_subsec.font.color.rgb = RGBColor(0x61, 0x9B, 0x40)
 
                 p_cont = doc.add_paragraph()
+                p_cont.paragraph_format.space_before = Pt(1)
+                p_cont.paragraph_format.space_after = Pt(3)
                 r_cont = p_cont.add_run(sub['contenido'] if sub['contenido'] else "-")
                 r_cont.font.name = "Calibri"
                 r_cont.font.size = Pt(11)
@@ -756,6 +781,8 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     doc.add_page_break()
     p_sec5 = doc.add_paragraph()
     p_sec5.paragraph_format.keep_with_next = True
+    p_sec5.paragraph_format.space_before = Pt(0)
+    p_sec5.paragraph_format.space_after = Pt(4)
     r_sec5 = p_sec5.add_run("5. REGISTROS FOTOGRÁFICOS")
     r_sec5.font.name = "Calibri"
     r_sec5.font.bold = True
@@ -769,6 +796,8 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
                 doc.add_page_break()
                 p_sec5_cont = doc.add_paragraph()
                 p_sec5_cont.paragraph_format.keep_with_next = True
+                p_sec5_cont.paragraph_format.space_before = Pt(0)
+                p_sec5_cont.paragraph_format.space_after = Pt(4)
                 r_sec5_cont = p_sec5_cont.add_run("5. REGISTROS FOTOGRÁFICOS (Continuación)")
                 r_sec5_cont.font.name = "Calibri"
                 r_sec5_cont.font.bold = True
@@ -823,6 +852,8 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
         doc.add_page_break()
         p_sec6 = doc.add_paragraph()
         p_sec6.paragraph_format.keep_with_next = True
+        p_sec6.paragraph_format.space_before = Pt(0)
+        p_sec6.paragraph_format.space_after = Pt(4)
         r_sec6 = p_sec6.add_run("6. ESQUEMA DE EQUIPO")
         r_sec6.font.name = "Calibri"
         r_sec6.font.bold = True
@@ -835,10 +866,14 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
 
             p_esq = doc.add_paragraph()
             p_esq.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p_esq.paragraph_format.space_before = Pt(0)
+            p_esq.paragraph_format.space_after = Pt(2)
             p_esq.add_run().add_picture(BytesIO(esq_data), width=Inches(6.8))
 
             p_esq_sub = doc.add_paragraph()
             p_esq_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p_esq_sub.paragraph_format.space_before = Pt(0)
+            p_esq_sub.paragraph_format.space_after = Pt(4)
             r_esq_sub = p_esq_sub.add_run(str(label_esq))
             r_esq_sub.font.name = "Calibri"
             r_esq_sub.font.bold = True
@@ -847,6 +882,8 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     if inspector_firma:
         p_firma = doc.add_paragraph()
         p_firma.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        p_firma.paragraph_format.space_before = Pt(6)
+        p_firma.paragraph_format.space_after = Pt(0)
         p_run = p_firma.add_run(f"\nElaborado por: {inspector_firma}")
         p_run.font.name = "Calibri"
         p_run.font.bold = True
