@@ -589,16 +589,17 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     font_normal.name = 'Calibri'
     font_normal.size = Pt(11)
 
-    # Margen superior e inferior muy reducido (0.2 in / ~0.5 cm)
+    # Márgenes de la página y posición del pie de página ajustados al límite inferior
     section = doc.sections[0]
     section.top_margin = Inches(0.2)
-    section.bottom_margin = Inches(0.4)
+    section.bottom_margin = Inches(0.3)
     section.left_margin = Inches(0.8)
     section.right_margin = Inches(0.8)
     section.header_distance = Inches(0.1)
+    section.footer_distance = Inches(0.1)
 
     # =========================================================
-    # ENCABEZADO WORD (LOGO LO MÁS ARRIBA POSIBLE)
+    # ENCABEZADO WORD (LOGO ESQUINA SUPERIOR DERECHA)
     # =========================================================
     header = section.header
     header_p = header.paragraphs[0]
@@ -614,7 +615,7 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
             pass
 
     # =========================================================
-    # PIE DE PÁGINA WORD (TAMAÑO 7 PT Y CENTRADO)
+    # PIE DE PÁGINA WORD (TAMAÑO 7 PT, CENTRADO Y MÁS ABAJO)
     # =========================================================
     footer = section.footer
     footer_p = footer.paragraphs[0]
@@ -815,7 +816,6 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
                 img_data1, label1 = bloque_fotos[j]
                 num_f1 = i + j + 1
                 
-                # Normalización del texto del título de foto
                 clean_label1 = re.sub(r'^Foto\s*\d+\s*:\s*', '', str(label1), flags=re.IGNORECASE).strip()
                 texto_foto1 = f"Foto {num_f1}: {clean_label1}" if clean_label1 else f"Foto {num_f1}"
 
@@ -823,7 +823,6 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
                 p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 p1.paragraph_format.space_before = Pt(0)
                 p1.paragraph_format.space_after = Pt(0)
-                # Ancho: 9.33cm (3.673 in), Alto: 7cm (2.755 in)
                 p1.add_run().add_picture(BytesIO(img_data1), width=Inches(3.673), height=Inches(2.755))
 
                 p1_sub = row_cells[0].add_paragraph()
