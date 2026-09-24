@@ -516,6 +516,10 @@ def guardar_resguardo_informe(
         # PREPARAR INFORMACIÓN PARA GOOGLE SHEETS
         # =================================================
 
+                # =================================================
+        # PREPARAR INFORMACIÓN PARA GOOGLE SHEETS
+        # =================================================
+
         filas = ws.get_all_values()
 
         secciones_serializables = {
@@ -533,12 +537,10 @@ def guardar_resguardo_informe(
             ensure_ascii=False
         )
 
-                fila_nueva = [
+        fila_nueva = [
             num_inf,
             str(datos_encabezado["ot"]),
-            datos_encabezado["fecha"].strftime(
-                "%Y-%m-%d"
-            ),
+            datos_encabezado["fecha"].strftime("%Y-%m-%d"),
             str(datos_encabezado["unidad"]),
             str(datos_encabezado["tag"]),
             str(datos_encabezado["descripcion"]),
