@@ -533,7 +533,7 @@ def guardar_resguardo_informe(
             ensure_ascii=False
         )
 
-        fila_nueva = [
+                fila_nueva = [
             num_inf,
             str(datos_encabezado["ot"]),
             datos_encabezado["fecha"].strftime(
@@ -544,5 +544,21 @@ def guardar_resguardo_informe(
             str(datos_encabezado["descripcion"]),
             str(datos_encabezado["aca"]),
             str(datos_encabezado["motivo"]),
-            str(datos_encabezado["alcance"])
-]
+            str(datos_encabezado["alcance"]),
+            secciones_json,
+            fotos_json
+        ]
+
+        ws.append_row(
+            fila_nueva,
+            value_input_option="USER_ENTERED"
+        )
+
+        st.success(
+            f"Informe {num_inf} guardado correctamente."
+        )
+
+    except Exception as e:
+        st.error(
+            f"Error al guardar el informe: {e}"
+        )
