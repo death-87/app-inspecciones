@@ -536,16 +536,16 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
             ]))
             story.append(t_pair)
 
-    # 6. ESQUEMA DE EQUIPO Y SECTORES CON DAÑOS
+    # 6. ESQUEMA DE EQUIPO
     if esquemas_procesados:
         story.append(PageBreak())
-        story.append(Paragraph("6. ESQUEMA DE EQUIPO Y SECTORES CON DAÑOS", sec_heading_style))
+        story.append(Paragraph("6. ESQUEMA DE EQUIPO", sec_heading_style))
         story.append(Spacer(1, 6))
 
         for idx, (esq_bytes, label_esq) in enumerate(esquemas_procesados, start=1):
             if idx > 1:
                 story.append(PageBreak())
-                story.append(Paragraph(f"6. ESQUEMA DE EQUIPO Y SECTORES CON DAÑOS (Continuación - Esquema {idx})", sec_heading_style))
+                story.append(Paragraph(f"6. ESQUEMA DE EQUIPO (Continuación - Esquema {idx})", sec_heading_style))
                 story.append(Spacer(1, 6))
 
             img_esq = RLImage(BytesIO(esq_bytes), width=18.5*cm, height=13.5*cm)
@@ -703,7 +703,7 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     if esquemas_procesados:
         doc.add_page_break()
         p_sec6 = doc.add_paragraph()
-        r_sec6 = p_sec6.add_run("6. ESQUEMA DE EQUIPO Y SECTORES CON DAÑOS")
+        r_sec6 = p_sec6.add_run("6. ESQUEMA DE EQUIPO")
         r_sec6.font.bold = True
         r_sec6.font.size = Pt(11)
         r_sec6.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
@@ -943,7 +943,7 @@ if st.session_state.get("imagenes_cargadas_resguardo"):
 # Despliegue de Esquemas a Tamaño Completo
 if st.session_state.get("esquemas_cargados_resguardo"):
     st.markdown("---")
-    st.markdown("##### 📐 6. Esquema de Equipo y Sectores con Daños")
+    st.markdown("##### 📐 6. Esquema de Equipo")
     esq_res = st.session_state["esquemas_cargados_resguardo"]
     
     for index, (esq_bytes, pie_esq_orig) in enumerate(esq_res):
