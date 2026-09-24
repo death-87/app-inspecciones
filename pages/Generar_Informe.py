@@ -97,7 +97,7 @@ def set_cell_background(cell, fill_hex):
 
 
 # =========================================================
-# CONEXIÓN MEDIANTE SERVICE ACCOUNT (SIN TOKEN DE USUARIO)
+# CONEXIÓN MEDIANTE SERVICE ACCOUNT
 # =========================================================
 
 @st.cache_resource
@@ -154,19 +154,20 @@ def obtener_imagenes_desde_drive_folder(folder_input):
         if not drive_service:
             return [], "No se pudo autenticar el servicio de Google Drive."
 
-        # Buscar archivos de imagen dentro de la carpeta
-        query = f"'{folder_id}' in parents and mimeType contains 'image/' and trashed = false"
+        query = f"'{folder_id}' in parents and (mimeType contains 'image/' or mimeType = 'application/octet-stream') and trashed = false"
+        
         results = drive_service.files().list(
             q=query, 
             fields="files(id, name, mimeType)",
             supportsAllDrives=True,
-            includeItemsFromAllDrives=True
+            includeItemsFromAllDrives=True,
+            pageSize=100
         ).execute()
         
         files = results.get('files', [])
 
         if not files:
-            return [], "No se encontraron imágenes en la carpeta de Google Drive. Asegúrate de que la carpeta tenga permiso 'Cualquier persona con el enlace puede ver'."
+            return [], "No se encontraron imágenes en la carpeta. Verifica que las fotos sean formato JPG/PNG y que la carpeta esté compartida con la Service Account o pública con el enlace."
 
         files_ordenados = sorted(files, key=lambda f: obtener_numero_archivo(f['name']))
         
