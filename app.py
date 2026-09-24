@@ -5,6 +5,28 @@ import streamlit as st
 import pandas as pd
 import gspread
 import plotly.express as px
+if not st.user.is_logged_in:
+    st.title("🔐 Google Drive")
+    st.write("Autoriza el acceso a tu cuenta de Google.")
+
+    st.button(
+        "🔑 Iniciar sesión con Google",
+        on_click=st.login
+    )
+
+    st.stop()
+
+st.success("✅ Google OAuth funcionando")
+st.write("Cuenta:", st.user.email)
+
+if "access" in st.user.tokens:
+    st.success("✅ Access token recibido")
+else:
+    st.error("❌ No se recibió el Access Token")
+
+st.button("Cerrar sesión", on_click=st.logout)
+
+st.stop()
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 
