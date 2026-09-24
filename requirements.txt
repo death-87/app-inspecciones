@@ -8,3 +8,4 @@ reportlab
 Pillow
 requests
 Authlib>=1.3.2
+httpx
