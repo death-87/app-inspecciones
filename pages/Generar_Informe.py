@@ -7,9 +7,10 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 from datetime import date, datetime
 from io import BytesIO
-from PIL import Image as PILImage
 
 # Librerías para generación de Word
 from docx import Document
@@ -28,7 +29,7 @@ from reportlab.lib.units import cm
 from reportlab.lib.utils import ImageReader
 
 # =========================================================
-# CONFIGURACIÓN DE LA PÁGINA
+# CONFIGURACIÓN DE LA PÁGINA Y CONSTANTES
 # =========================================================
 st.set_page_config(
     page_title="Generar Informe Visual",
@@ -38,6 +39,10 @@ st.set_page_config(
 
 URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/logo.png"
 SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
+
+# ID de la carpeta de Google Drive donde se almacenarán las imágenes
+# Puedes definirlo en st.secrets["DRIVE_FOLDER_ID"] o ponerlo directamente aquí
+DRIVE_FOLDER_ID = st.secrets.get("DRIVE_FOLDER_ID", "1a2b3c4d5e6f7g8h9i_REEMPLAZAR_POR_TU_ID")
 
 LISTA_INSPECTORES = [
     "Juan Navarrete",
@@ -59,7 +64,7 @@ LISTA_PLANTAS = [
 ]
 
 # =========================================================
-# FUNCIONES AUXILIARES Y CONEXIÓN CON CACHÉ
+# CONEXIÓN A APIS (GOOGLE SHEETS Y GOOGLE DRIVE)
 # =========================================================
 def set_cell_background(cell, fill_hex):
     tcPr = cell._tc.get_or_add_tcPr()
@@ -67,8 +72,8 @@ def set_cell_background(cell, fill_hex):
     tcPr.append(shd)
 
 @st.cache_resource
-def conectar_google_sheets():
-    """Mantiene en caché la conexión autorizada con Google Sheets para no saturar las cuotas de la API."""
+def obtener_credenciales():
+    """Obtiene las credenciales globales autorizadas."""
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
@@ -76,10 +81,66 @@ def conectar_google_sheets():
     creds_dict = dict(st.secrets["connections"]["gsheets"])
     if "private_key" in creds_dict:
         creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-    credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    return Credentials.from_service_account_info(creds_dict, scopes=scopes)
+
+@st.cache_resource
+def conectar_google_sheets():
+    """Mantiene en caché el cliente de Google Sheets."""
+    credentials = obtener_credenciales()
     client = gspread.authorize(credentials)
     return client.open_by_key(SPREADSHEET_ID)
 
+@st.cache_resource
+def conectar_google_drive():
+    """Mantiene en caché la conexión con el servicio de Google Drive."""
+    credentials = obtener_credenciales()
+    return build('drive', 'v3', credentials=credentials)
+
+# =========================================================
+# FUNCIONES DE ALMACENAMIENTO EN GOOGLE DRIVE
+# =========================================================
+def subir_imagen_a_drive(nombre_archivo, img_bytes):
+    """Subes bytes de una imagen a Google Drive y retorna su URL directa."""
+    try:
+        drive_service = conectar_google_drive()
+        file_metadata = {
+            'name': nombre_archivo,
+            'parents': [DRIVE_FOLDER_ID]
+        }
+        media = MediaIoBaseUpload(BytesIO(img_bytes), mimetype='image/jpeg', resumable=True)
+        archivo_creado = drive_service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id'
+        ).execute()
+        
+        file_id = archivo_creado.get('id')
+        
+        # Opcional: Hacer accesible el archivo por enlace de lectura
+        drive_service.permissions().create(
+            fileId=file_id,
+            body={'role': 'reader', 'type': 'anyone'}
+        ).execute()
+
+        # Enlace directo para descarga/visualización
+        return f"https://lh3.googleusercontent.com/d/{file_id}"
+    except Exception as e:
+        st.error(f"Error al subir imagen '{nombre_archivo}' a Google Drive: {e}")
+        return None
+
+def descargar_bytes_desde_url(url):
+    """Descarga los bytes de la imagen a partir del enlace de Google Drive o URL pública."""
+    try:
+        res = requests.get(url, timeout=10)
+        if res.status_code == 200:
+            return res.content
+    except Exception:
+        pass
+    return None
+
+# =========================================================
+# LECTURA / ESCRITURA EN HISTORIAL
+# =========================================================
 @st.cache_data(ttl=300)
 def cargar_base_equipos():
     try:
@@ -121,44 +182,8 @@ def obtener_o_crear_hoja_historial():
         ])
     return ws
 
-def optimizar_imagen_bytes(img_bytes, max_size=(800, 800), calidad=60):
-    """Comprime la imagen para reducir su peso en Base64 y evitar sobrepasar límites de Google Sheets."""
-    try:
-        img = PILImage.open(BytesIO(img_bytes))
-        if img.mode in ("RGBA", "P"):
-            img = img.convert("RGB")
-        img.thumbnail(max_size, PILImage.Resampling.LANCZOS)
-        out = BytesIO()
-        img.save(out, format="JPEG", quality=calidad, optimize=True)
-        return out.getvalue()
-    except Exception:
-        return img_bytes
-
-def serializar_imagenes(imagenes_procesadas):
-    """Comprime y convierte las imágenes procesadas a Base64 JSON."""
-    fotos_data = []
-    for img_bytes, pie in imagenes_procesadas:
-        img_comprimida = optimizar_imagen_bytes(img_bytes)
-        b64_str = base64.b64encode(img_comprimida).decode('utf-8')
-        fotos_data.append({"b64": b64_str, "pie": pie})
-    return json.dumps(fotos_data, ensure_ascii=False)
-
-def deserializar_imagenes(fotos_json_str):
-    """Decodifica la cadena JSON de vuelta a bytes y pie."""
-    if not fotos_json_str:
-        return []
-    try:
-        fotos_data = json.loads(fotos_json_str)
-        resultado = []
-        for item in fotos_data:
-            img_bytes = base64.b64decode(item["b64"])
-            resultado.append((img_bytes, item["pie"]))
-        return resultado
-    except Exception:
-        return []
-
 def guardar_resguardo_informe(datos_encabezado, secciones_dinamicas, imagenes_procesadas, inspector_firma):
-    """Guarda o actualiza un informe en Google Sheets."""
+    """Sube fotos a Google Drive y guarda los enlaces + metadata en Google Sheets."""
     try:
         ws = obtener_o_crear_hoja_historial()
         num_inf = datos_encabezado['num_informe'].strip()
@@ -166,10 +191,20 @@ def guardar_resguardo_informe(datos_encabezado, secciones_dinamicas, imagenes_pr
         if not num_inf:
             return False, "Debe ingresar un N.º DE INFORME para poder resguardar."
 
+        # Process pictures & upload to Drive
+        fotos_guardadas = []
+        for idx, (img_bytes, pie) in enumerate(imagenes_procesadas, start=1):
+            nombre_foto = f"{num_inf}_foto_{idx}.jpg"
+            url_drive = subir_imagen_a_drive(nombre_foto, img_bytes)
+            if url_drive:
+                fotos_guardadas.append({"url": url_drive, "pie": pie})
+            else:
+                fotos_guardadas.append({"url": "", "pie": pie})
+
         filas = ws.get_all_values()
         secciones_serializables = {str(k): v for k, v in secciones_dinamicas.items()}
         secciones_json = json.dumps(secciones_serializables, ensure_ascii=False)
-        fotos_json = serializar_imagenes(imagenes_procesadas)
+        fotos_json = json.dumps(fotos_guardadas, ensure_ascii=False)
         
         fila_nueva = [
             num_inf,
@@ -194,15 +229,15 @@ def guardar_resguardo_informe(datos_encabezado, secciones_dinamicas, imagenes_pr
 
         if fila_idx:
             ws.update(f"A{fila_idx}:L{fila_idx}", [fila_nueva])
-            mensaje = f"✅ Informe '{num_inf}' actualizado correctamente en Google Sheets."
+            mensaje = f"✅ Informe '{num_inf}' actualizado correctamente en Google Sheets con fotos almacenadas en Google Drive."
         else:
             ws.append_row(fila_nueva)
-            mensaje = f"✅ Informe '{num_inf}' resguardado exitosamente en Google Sheets."
+            mensaje = f"✅ Informe '{num_inf}' resguardado exitosamente en Google Sheets con fotos en Google Drive."
 
         st.cache_data.clear()
         return True, mensaje
     except Exception as e:
-        return False, f"Error al guardar en Google Sheets: {str(e)}"
+        return False, f"Error al guardar el resguardo: {str(e)}"
 
 def obtener_lista_informes_guardados():
     try:
@@ -222,8 +257,21 @@ def cargar_datos_informe(num_informe_sel):
             if len(f) > 0 and f[0].strip().upper() == num_informe_sel.upper():
                 secciones_json = json.loads(f[9]) if len(f) > 9 and f[9] else {}
                 secciones_dict = {int(k): v for k, v in secciones_json.items()}
+                
                 fotos_json_str = f[11] if len(f) > 11 else ""
-                imgs_recuperadas = deserializar_imagenes(fotos_json_str)
+                imgs_recuperadas = []
+                if fotos_json_str:
+                    try:
+                        fotos_lista = json.loads(fotos_json_str)
+                        for item in fotos_lista:
+                            url = item.get("url")
+                            pie = item.get("pie", "")
+                            if url:
+                                img_bytes = descargar_bytes_desde_url(url)
+                                if img_bytes:
+                                    imgs_recuperadas.append((img_bytes, pie))
+                    except Exception:
+                        pass
 
                 return {
                     "num_informe": f[0],
@@ -550,33 +598,34 @@ informe_sel = st.selectbox("Buscar por N.° de Informe Guardado:", lista_informe
 
 if st.button("📂 Cargar Datos e Imágenes del Informe Seleccionado", use_container_width=True):
     if informe_sel and informe_sel != "-- Seleccionar informe resguardado --":
-        datos_cargados = cargar_datos_informe(informe_sel)
-        if datos_cargados:
-            st.session_state['num_informe'] = datos_cargados['num_informe']
-            st.session_state['ot'] = datos_cargados['ot']
-            st.session_state['fecha'] = datos_cargados['fecha']
-            st.session_state['unidad'] = datos_cargados['unidad']
-            st.session_state['tag'] = datos_cargados['tag']
-            st.session_state['descripcion'] = datos_cargados['descripcion']
-            st.session_state['aca'] = datos_cargados['aca']
-            st.session_state['motivo'] = datos_cargados['motivo']
-            st.session_state['alcance'] = datos_cargados['alcance']
-            st.session_state['inspector_firma'] = datos_cargados['inspector']
+        with st.spinner("Descargando imágenes guardadas desde Google Drive..."):
+            datos_cargados = cargar_datos_informe(informe_sel)
+            if datos_cargados:
+                st.session_state['num_informe'] = datos_cargados['num_informe']
+                st.session_state['ot'] = datos_cargados['ot']
+                st.session_state['fecha'] = datos_cargados['fecha']
+                st.session_state['unidad'] = datos_cargados['unidad']
+                st.session_state['tag'] = datos_cargados['tag']
+                st.session_state['descripcion'] = datos_cargados['descripcion']
+                st.session_state['aca'] = datos_cargados['aca']
+                st.session_state['motivo'] = datos_cargados['motivo']
+                st.session_state['alcance'] = datos_cargados['alcance']
+                st.session_state['inspector_firma'] = datos_cargados['inspector']
 
-            # Cargar subpuntos dinámicos
-            sec_loaded = datos_cargados['secciones_dinamicas']
-            for s_num in [1, 2, 3, 4]:
-                sub_list = sec_loaded.get(s_num, {}).get('subpuntos', [])
-                st.session_state[f"cant_subpuntos_sec_{s_num}"] = len(sub_list)
-                for idx, sub in enumerate(sub_list, start=1):
-                    st.session_state[f"tit_{s_num}_{idx}"] = sub.get("titulo", "")
-                    st.session_state[f"cont_{s_num}_{idx}"] = sub.get("contenido", "")
+                # Cargar subpuntos dinámicos
+                sec_loaded = datos_cargados['secciones_dinamicas']
+                for s_num in [1, 2, 3, 4]:
+                    sub_list = sec_loaded.get(s_num, {}).get('subpuntos', [])
+                    st.session_state[f"cant_subpuntos_sec_{s_num}"] = len(sub_list)
+                    for idx, sub in enumerate(sub_list, start=1):
+                        st.session_state[f"tit_{s_num}_{idx}"] = sub.get("titulo", "")
+                        st.session_state[f"cont_{s_num}_{idx}"] = sub.get("contenido", "")
 
-            # Cargar imágenes resguardadas
-            st.session_state["imagenes_cargadas_resguardo"] = datos_cargados["imagenes_procesadas"]
+                # Cargar imágenes resguardadas desde Google Drive
+                st.session_state["imagenes_cargadas_resguardo"] = datos_cargados["imagenes_procesadas"]
 
-            st.success(f"¡Informe '{informe_sel}' cargado correctamente con {len(st.session_state['imagenes_cargadas_resguardo'])} imágenes!")
-            st.rerun()
+                st.success(f"¡Informe '{informe_sel}' cargado correctamente con {len(st.session_state['imagenes_cargadas_resguardo'])} imágenes desde Google Drive!")
+                st.rerun()
 
 st.markdown("---")
 
@@ -703,7 +752,7 @@ if uploaded_files:
 
 elif st.session_state.get("imagenes_cargadas_resguardo"):
     imgs_res = st.session_state["imagenes_cargadas_resguardo"]
-    st.info(f"📸 Se cargaron {len(imgs_res)} imágenes desde el resguardo guardado.")
+    st.info(f"📸 Se cargaron {len(imgs_res)} imágenes desde Google Drive.")
     
     cols = st.columns(3)
     for index, (img_bytes, pie_orig) in enumerate(imgs_res):
@@ -731,16 +780,17 @@ datos_encabezado = {
     'alcance': alcance
 }
 
-# BOTÓN DE RESGUARDAR / GUARDAR EN GOOGLE SHEETS
+# BOTÓN DE RESGUARDAR / GUARDAR EN GOOGLE SHEETS Y DRIVE
 st.markdown("---")
 st.markdown("#### 💾 Resguardo del Informe")
 
-if st.button("💾 RESGUARDAR INFORME EN GOOGLE SHEETS", type="primary", use_container_width=True):
-    exito, msg = guardar_resguardo_informe(datos_encabezado, secciones_dinamicas, imagenes_procesadas, inspector_firma)
-    if exito:
-        st.success(msg)
-    else:
-        st.error(msg)
+if st.button("💾 RESGUARDAR INFORME Y FOTOS EN GOOGLE DRIVE", type="primary", use_container_width=True):
+    with st.spinner("Subiendo fotos a Google Drive y registrando informe..."):
+        exito, msg = guardar_resguardo_informe(datos_encabezado, secciones_dinamicas, imagenes_procesadas, inspector_firma)
+        if exito:
+            st.success(msg)
+        else:
+            st.error(msg)
 
 # GENERAR Y DESCARGAR ARCHIVOS
 st.markdown("---")
