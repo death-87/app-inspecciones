@@ -545,4 +545,4 @@ def guardar_resguardo_informe(
             str(datos_encabezado["aca"]),
             str(datos_encabezado["motivo"]),
             str(datos_encabezado["alcance"])
-```
+]
