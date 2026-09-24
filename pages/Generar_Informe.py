@@ -589,7 +589,7 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     font_normal.name = 'Calibri'
     font_normal.size = Pt(11)
 
-    # Margen superior e inferior muy reducido (0.2 in / ~0.5 cm) para posicionar logo y contenido más arriba
+    # Margen superior e inferior muy reducido (0.2 in / ~0.5 cm)
     section = doc.sections[0]
     section.top_margin = Inches(0.2)
     section.bottom_margin = Inches(0.4)
@@ -614,7 +614,7 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
             pass
 
     # =========================================================
-    # PIE DE PÁGINA WORD (6pt)
+    # PIE DE PÁGINA WORD (TAMAÑO 7 PT Y CENTRADO)
     # =========================================================
     footer = section.footer
     footer_p = footer.paragraphs[0]
@@ -638,12 +638,12 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     
     run_ft_1 = p_left.add_run("SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.\n")
     run_ft_1.font.name = "Calibri"
-    run_ft_1.font.size = Pt(6)
+    run_ft_1.font.size = Pt(7)
     run_ft_1.font.color.rgb = RGBColor(107, 114, 128)
 
     run_ft_2 = p_left.add_run("CONTRATO N° AC 31104857")
     run_ft_2.font.name = "Calibri"
-    run_ft_2.font.size = Pt(6)
+    run_ft_2.font.size = Pt(7)
     run_ft_2.font.color.rgb = RGBColor(107, 114, 128)
 
     p_right = cell_right.paragraphs[0]
@@ -653,7 +653,7 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     
     run_ft_3 = p_right.add_run("Pág. ")
     run_ft_3.font.name = "Calibri"
-    run_ft_3.font.size = Pt(6)
+    run_ft_3.font.size = Pt(7)
     run_ft_3.font.color.rgb = RGBColor(107, 114, 128)
     agregar_numero_pagina_word(run_ft_3)
 
@@ -813,6 +813,12 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
 
                 # Foto 1
                 img_data1, label1 = bloque_fotos[j]
+                num_f1 = i + j + 1
+                
+                # Normalización del texto del título de foto
+                clean_label1 = re.sub(r'^Foto\s*\d+\s*:\s*', '', str(label1), flags=re.IGNORECASE).strip()
+                texto_foto1 = f"Foto {num_f1}: {clean_label1}" if clean_label1 else f"Foto {num_f1}"
+
                 p1 = row_cells[0].paragraphs[0]
                 p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 p1.paragraph_format.space_before = Pt(0)
@@ -823,8 +829,9 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
                 p1_sub = row_cells[0].add_paragraph()
                 p1_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 p1_sub.paragraph_format.space_before = Pt(0)
-                p1_sub.paragraph_format.space_after = Pt(2)
-                r1_sub = p1_sub.add_run(str(label1))
+                p1_sub.paragraph_format.space_after = Pt(1)
+                p1_sub.paragraph_format.line_spacing = Pt(11)
+                r1_sub = p1_sub.add_run(texto_foto1)
                 r1_sub.font.name = "Calibri"
                 r1_sub.font.bold = True
                 r1_sub.font.size = Pt(11)
@@ -832,6 +839,11 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
                 # Foto 2 (si existe en la fila)
                 if j + 1 < len(bloque_fotos):
                     img_data2, label2 = bloque_fotos[j+1]
+                    num_f2 = i + j + 2
+
+                    clean_label2 = re.sub(r'^Foto\s*\d+\s*:\s*', '', str(label2), flags=re.IGNORECASE).strip()
+                    texto_foto2 = f"Foto {num_f2}: {clean_label2}" if clean_label2 else f"Foto {num_f2}"
+
                     p2 = row_cells[1].paragraphs[0]
                     p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
                     p2.paragraph_format.space_before = Pt(0)
@@ -841,8 +853,9 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
                     p2_sub = row_cells[1].add_paragraph()
                     p2_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
                     p2_sub.paragraph_format.space_before = Pt(0)
-                    p2_sub.paragraph_format.space_after = Pt(2)
-                    r2_sub = p2_sub.add_run(str(label2))
+                    p2_sub.paragraph_format.space_after = Pt(1)
+                    p2_sub.paragraph_format.line_spacing = Pt(11)
+                    r2_sub = p2_sub.add_run(texto_foto2)
                     r2_sub.font.name = "Calibri"
                     r2_sub.font.bold = True
                     r2_sub.font.size = Pt(11)
