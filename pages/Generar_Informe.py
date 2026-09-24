@@ -599,27 +599,49 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
             pass
 
     # =========================================================
-    # PIE DE PÁGINA WORD (TEXTO CENTRADO Y NUMERACIÓN DE PÁGINA)
+    # PIE DE PÁGINA WORD (TABLA TRANSPARENTE: TEXTO CENTRO | N° PÁG DERECHA)
     # =========================================================
     footer = section.footer
     footer_p = footer.paragraphs[0]
-    footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
+    # Crear una tabla de 1 fila x 2 columnas dentro del pie de página
+    ft_table = footer.add_table(rows=1, cols=2, width=Inches(6.8))
+    ft_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    
+    # Quitar bordes a la tabla del pie de página
+    tblPr = ft_table._tbl.tblPr
+    borders = parse_xml(r'<w:tblBorders %s><w:top w:val="none"/><w:left w:val="none"/><w:bottom w:val="none"/><w:right w:val="none"/><w:insideH w:val="none"/><w:insideV w:val="none"/></w:tblBorders>' % nsdecls('w'))
+    tblPr.append(borders)
 
-    run_ft_1 = footer_p.add_run("SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.\n")
+    cell_left = ft_table.rows[0].cells[0]
+    cell_right = ft_table.rows[0].cells[1]
+    cell_left.width = Inches(5.3)
+    cell_right.width = Inches(1.5)
+
+    # Columna Izquierda: Texto del contrato centrado
+    p_left = cell_left.paragraphs[0]
+    p_left.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run_ft_1 = p_left.add_run("SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.\n")
     run_ft_1.font.size = Pt(7)
     run_ft_1.font.name = "Helvetica"
     run_ft_1.font.color.rgb = RGBColor(107, 114, 128)
 
-    run_ft_2 = footer_p.add_run("CONTRATO N° AC 31104857\n")
+    run_ft_2 = p_left.add_run("CONTRATO N° AC 31104857")
     run_ft_2.font.size = Pt(7)
     run_ft_2.font.name = "Helvetica"
     run_ft_2.font.color.rgb = RGBColor(107, 114, 128)
 
-    run_ft_3 = footer_p.add_run("Pág. ")
+    # Columna Derecha: Número de página alineado a la derecha
+    p_right = cell_right.paragraphs[0]
+    p_right.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    run_ft_3 = p_right.add_run("Pág. ")
     run_ft_3.font.size = Pt(7)
     run_ft_3.font.name = "Helvetica"
     run_ft_3.font.color.rgb = RGBColor(107, 114, 128)
     agregar_numero_pagina_word(run_ft_3)
+
+    # Limpiar el párrafo inicial sobrante del pie de página
+    footer._element.remove(footer_p._element)
 
     # =========================================================
     # CUERPO DEL INFORME WORD
