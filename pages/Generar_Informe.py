@@ -435,7 +435,6 @@ def dibujar_plantilla_pdf(canvas, doc):
         try:
             img_stream = BytesIO(logo_bytes)
             img = ImageReader(img_stream)
-            # Logo en la esquina superior derecha y pegado más al borde superior
             width_logo = 120
             height_logo = 45
             x_pos = letter[0] - width_logo - 30
@@ -444,7 +443,6 @@ def dibujar_plantilla_pdf(canvas, doc):
         except Exception:
             pass
 
-    # Pie de página pequeño
     canvas.setFont("Helvetica", 6)
     canvas.setFillColor(colors.HexColor("#6B7280"))
     canvas.drawCentredString(letter[0] / 2.0, 18, "SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.")
@@ -465,8 +463,7 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
     )
 
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=15, leading=18, textColor=colors.HexColor('#1E3A8A'), alignment=1, spaceAfter=2)
-    subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=9, leading=11, textColor=colors.HexColor('#4B5563'), alignment=1, spaceAfter=10)
+    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=15, leading=18, textColor=colors.HexColor('#1E3A8A'), alignment=1, spaceAfter=8)
     sec_heading_style = ParagraphStyle('SecHeader', parent=styles['Heading2'], fontSize=11, leading=13, textColor=colors.HexColor('#1E3A8A'), fontName='Helvetica-Bold', spaceBefore=10, spaceAfter=4, keepWithNext=True)
     subsec_heading_style = ParagraphStyle('SubSecHeader', parent=styles['Heading3'], fontSize=9.5, leading=11, textColor=colors.HexColor('#619b40'), fontName='Helvetica-Bold', spaceBefore=4, spaceAfter=2, keepWithNext=True)
     text_style = ParagraphStyle('TextStyle', parent=styles['Normal'], fontSize=8.5, leading=11, textColor=colors.HexColor('#1F2937'), spaceAfter=6)
@@ -475,7 +472,6 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
 
     story = [
         Paragraph("INFORME DE INSPECCIÓN VISUAL", title_style),
-        Paragraph("CONTROL DE INSPECCIÓN • CALIDAD • TRAZABILIDAD", subtitle_style),
         Spacer(1, 4)
     ]
 
@@ -593,7 +589,6 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     font_normal.name = 'Calibri'
     font_normal.size = Pt(11)
 
-    # Margen superior muy ajustado (0.3 in) para pegar el logo más arriba
     section = doc.sections[0]
     section.top_margin = Inches(0.3)
     section.bottom_margin = Inches(0.5)
@@ -672,13 +667,6 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     run_title.font.bold = True
     run_title.font.size = Pt(15)
     run_title.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
-
-    p_sub = doc.add_paragraph()
-    p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run_sub = p_sub.add_run("CONTROL DE INSPECCIÓN • CALIDAD • TRAZABILIDAD")
-    run_sub.font.name = "Calibri"
-    run_sub.font.size = Pt(9.5)
-    run_sub.font.color.rgb = RGBColor(0x4B, 0x55, 0x63)
 
     table = doc.add_table(rows=5, cols=4)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
