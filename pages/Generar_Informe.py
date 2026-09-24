@@ -393,6 +393,23 @@ def cargar_datos_informe(num_informe_sel):
     return None
 
 
+def eliminar_informe_guardado(num_informe_sel):
+    """Elimina la fila correspondiente al informe en la hoja HISTORIAL_INFORMES."""
+    try:
+        ws = obtener_o_crear_hoja_historial()
+        filas = ws.get_all_values()
+        
+        for idx, f in enumerate(filas[1:], start=2):
+            if len(f) > 0 and f[0].strip().upper() == num_informe_sel.strip().upper():
+                ws.delete_rows(idx)
+                st.cache_data.clear()
+                return True, f"🗑️ El informe '{num_informe_sel}' fue eliminado con éxito de Google Sheets."
+                
+        return False, "No se encontró el informe especificado para eliminar."
+    except Exception as e:
+        return False, f"Error al intentar eliminar el informe: {e}"
+
+
 # =========================================================
 # GENERACIÓN DE PDF Y WORD
 # =========================================================
@@ -683,12 +700,22 @@ df_equipos = cargar_base_equipos()
 if "imagenes_cargadas_resguardo" not in st.session_state:
     st.session_state["imagenes_cargadas_resguardo"] = []
 
-# CARGAR INFORMES PREVIAMENTE RESGUARDADOS
-st.markdown("### 📂 Cargar Informe Resguardado para Modificar")
+# CARGAR O ELIMINAR INFORMES PREVIAMENTE RESGUARDADOS
+st.markdown("### 📂 Cargar o Eliminar Informe Resguardado")
 lista_informes_guardados = ["-- Seleccionar informe resguardado --"] + obtener_lista_informes_guardados()
 informe_sel = st.selectbox("Buscar por N.° de Informe Guardado:", lista_informes_guardados)
 
-if st.button("📂 Cargar Datos e Imágenes del Informe Seleccionado", use_container_width=True):
+col_acc1, col_acc2 = st.columns([2, 1])
+
+with col_acc1:
+    btn_cargar = st.button("📂 Cargar Datos e Imágenes del Informe Seleccionado", use_container_width=True)
+
+with col_acc2:
+    confirmar_eliminar = st.checkbox("⚠️ Confirmar eliminación", key="chk_eliminar")
+    btn_eliminar = st.button("🗑️ Eliminar Informe", type="primary", use_container_width=True)
+
+# LÓGICA DE CARGA
+if btn_cargar:
     if informe_sel and informe_sel != "-- Seleccionar informe resguardado --":
         datos_cargados = cargar_datos_informe(informe_sel)
         if datos_cargados:
@@ -714,6 +741,23 @@ if st.button("📂 Cargar Datos e Imágenes del Informe Seleccionado", use_conta
             st.session_state["imagenes_cargadas_resguardo"] = datos_cargados["imagenes_procesadas"]
             st.success(f"¡Informe '{informe_sel}' cargado correctamente!")
             st.rerun()
+    else:
+        st.warning("Selecciona un informe válido para cargar.")
+
+# LÓGICA DE ELIMINACIÓN
+if btn_eliminar:
+    if not informe_sel or informe_sel == "-- Seleccionar informe resguardado --":
+        st.warning("Por favor selecciona un informe de la lista antes de intentar eliminar.")
+    elif not confirmar_eliminar:
+        st.error("Por seguridad, debes marcar la casilla '⚠️ Confirmar eliminación' antes de eliminar.")
+    else:
+        with st.spinner("Eliminando informe de Google Sheets..."):
+            exito, msg = eliminar_informe_guardado(informe_sel)
+            if exito:
+                st.success(msg)
+                st.rerun()
+            else:
+                st.error(msg)
 
 st.markdown("---")
 
