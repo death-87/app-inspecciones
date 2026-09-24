@@ -153,14 +153,21 @@ def conectar_google_drive():
 
     try:
         access_token = None
+
+        # 1. Buscar en tokens de st.user
         if hasattr(st.user, "tokens") and st.user.tokens:
-            access_token = st.user.tokens.get("access")
-        
+            access_token = st.user.tokens.get("access") or st.user.tokens.get("access_token")
+
+        # 2. Buscar en session_state (compartido desde app.py)
+        if not access_token and "access_token" in st.session_state:
+            access_token = st.session_state["access_token"]
+
+        # 3. Buscar en el contexto si existe
         if not access_token and hasattr(st, "context") and hasattr(st.context, "cookies"):
             access_token = st.user.get("access_token")
 
         if not access_token:
-            st.error("No se recibió el access token de Google. Por favor cierra sesión y vuelve a autorizar los permisos.")
+            st.error("No se recibió el access token de Google. Por favor cierra sesión desde el menú lateral e inicia sesión nuevamente.")
             return None
 
         credentials = OAuthCredentials(token=access_token)
