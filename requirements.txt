@@ -2,8 +2,8 @@ streamlit
 pandas
 gspread
 google-auth
-reportlab
+google-api-python-client
 python-docx
+reportlab
+Pillow
 requests
-plotly
-streamlit-authenticator
