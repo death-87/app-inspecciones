@@ -54,10 +54,6 @@ st.set_page_config(
 # =========================================================
 # AUTENTICACIÓN GOOGLE
 # =========================================================
-#
-# Google OAuth se utiliza para acceder al Google Drive PERSONAL.
-# Google Sheets continúa utilizando la cuenta de servicio.
-# =========================================================
 
 if not st.user.is_logged_in:
 
@@ -68,7 +64,10 @@ if not st.user.is_logged_in:
         "con la cuenta de Google que contiene tu Google Drive personal."
     )
 
-    if st.button("🔑 Iniciar sesión con Google", type="primary"):
+    if st.button(
+        "🔑 Iniciar sesión con Google",
+        type="primary"
+    ):
         st.login()
 
     st.stop()
@@ -87,8 +86,6 @@ SPREADSHEET_ID = (
     "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 )
 
-# ID de la carpeta de Google Drive donde se almacenarán las imágenes.
-# Se obtiene desde Streamlit Secrets.
 DRIVE_FOLDER_ID = st.secrets.get(
     "DRIVE_FOLDER_ID",
     "1a2b3c4d5e6f7g8h9i_REEMPLAZAR_POR_TU_ID"
@@ -125,6 +122,7 @@ LISTA_PLANTAS = [
 # =========================================================
 
 def set_cell_background(cell, fill_hex):
+
     tcPr = cell._tc.get_or_add_tcPr()
 
     shd = parse_xml(
@@ -137,15 +135,9 @@ def set_cell_background(cell, fill_hex):
 # =========================================================
 # CONEXIÓN A GOOGLE SHEETS
 # =========================================================
-#
-# IMPORTANTE:
-# Esta conexión utiliza la CUENTA DE SERVICIO.
-# NO utiliza OAuth.
-# =========================================================
 
 @st.cache_resource
 def obtener_credenciales():
-    """Obtiene las credenciales de la cuenta de servicio."""
 
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
@@ -157,6 +149,7 @@ def obtener_credenciales():
     )
 
     if "private_key" in creds_dict:
+
         creds_dict["private_key"] = (
             creds_dict["private_key"]
             .replace("\\n", "\n")
@@ -170,7 +163,6 @@ def obtener_credenciales():
 
 @st.cache_resource
 def conectar_google_sheets():
-    """Mantiene en caché el cliente de Google Sheets."""
 
     credentials = obtener_credenciales()
 
@@ -182,21 +174,16 @@ def conectar_google_sheets():
 # =========================================================
 # CONEXIÓN A GOOGLE DRIVE PERSONAL
 # =========================================================
-#
-# IMPORTANTE:
-# Esta conexión utiliza el OAuth de la cuenta personal.
-#
-# NO utiliza la cuenta de servicio.
-# =========================================================
 
 def conectar_google_drive():
-    """Conecta Google Drive utilizando OAuth de la cuenta personal."""
 
     if not st.user.is_logged_in:
+
         st.error(
             "Debes iniciar sesión con Google para acceder "
             "a tu Google Drive."
         )
+
         return None
 
     try:
@@ -204,9 +191,11 @@ def conectar_google_drive():
         access_token = st.user.tokens.get("access")
 
         if not access_token:
+
             st.error(
                 "No se recibió el access token de Google."
             )
+
             return None
 
         credentials = OAuthCredentials(
@@ -235,11 +224,10 @@ def conectar_google_drive():
 # FUNCIONES DE ALMACENAMIENTO EN GOOGLE DRIVE
 # =========================================================
 
-def subir_imagen_a_drive(nombre_archivo, img_bytes):
-    """
-    Sube una imagen a la carpeta personal de Google Drive
-    definida mediante DRIVE_FOLDER_ID.
-    """
+def subir_imagen_a_drive(
+    nombre_archivo,
+    img_bytes
+):
 
     try:
 
@@ -268,13 +256,14 @@ def subir_imagen_a_drive(nombre_archivo, img_bytes):
         file_id = archivo_creado.get("id")
 
         if not file_id:
+
             st.error(
                 f"Google Drive no devolvió ID para "
                 f"'{nombre_archivo}'."
             )
+
             return None
 
-        # Permitir visualización mediante enlace.
         drive_service.permissions().create(
             fileId=file_id,
             body={
@@ -283,7 +272,6 @@ def subir_imagen_a_drive(nombre_archivo, img_bytes):
             }
         ).execute()
 
-        # Enlace utilizado por el sistema para recuperar la imagen.
         return (
             f"https://lh3.googleusercontent.com/d/{file_id}"
         )
@@ -304,7 +292,6 @@ def subir_imagen_a_drive(nombre_archivo, img_bytes):
 
 @st.cache_data(ttl=3600)
 def obtener_bytes_imagen(url):
-    """Descarga una imagen desde una URL y devuelve sus bytes."""
 
     try:
 
@@ -314,9 +301,11 @@ def obtener_bytes_imagen(url):
         )
 
         if response.status_code == 200:
+
             return response.content
 
     except Exception:
+
         pass
 
     return None
@@ -333,7 +322,9 @@ def cargar_base_equipos():
 
         client = conectar_google_sheets()
 
-        ws = client.worksheet("BASE EQUIPOS")
+        ws = client.worksheet(
+            "BASE EQUIPOS"
+        )
 
         filas = ws.get_all_values()
 
@@ -449,6 +440,7 @@ def guardar_resguardo_informe(
     imagenes_procesadas,
     inspector_firma
 ):
+
     """
     Sube fotos a Google Drive personal y guarda
     los enlaces y metadata en Google Sheets.
@@ -516,10 +508,6 @@ def guardar_resguardo_informe(
         # PREPARAR INFORMACIÓN PARA GOOGLE SHEETS
         # =================================================
 
-                # =================================================
-        # PREPARAR INFORMACIÓN PARA GOOGLE SHEETS
-        # =================================================
-
         filas = ws.get_all_values()
 
         secciones_serializables = {
@@ -540,7 +528,9 @@ def guardar_resguardo_informe(
         fila_nueva = [
             num_inf,
             str(datos_encabezado["ot"]),
-            datos_encabezado["fecha"].strftime("%Y-%m-%d"),
+            datos_encabezado["fecha"].strftime(
+                "%Y-%m-%d"
+            ),
             str(datos_encabezado["unidad"]),
             str(datos_encabezado["tag"]),
             str(datos_encabezado["descripcion"]),
@@ -556,11 +546,14 @@ def guardar_resguardo_informe(
             value_input_option="USER_ENTERED"
         )
 
-        st.success(
+        return (
+            True,
             f"Informe {num_inf} guardado correctamente."
         )
 
     except Exception as e:
-        st.error(
+
+        return (
+            False,
             f"Error al guardar el informe: {e}"
         )
