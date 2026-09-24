@@ -569,7 +569,7 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
 
     story.append(Spacer(1, 6))
     if inspector_firma:
-        story.append(Paragraph(f"<b>Generado por:</b> {inspector_firma}", firma_style))
+        story.append(Paragraph(f"<b>Elaborado por:</b> {inspector_firma}", firma_style))
 
     doc.build(story, onFirstPage=dibujar_plantilla_pdf, onLaterPages=dibujar_plantilla_pdf)
     buffer.seek(0)
@@ -803,7 +803,7 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     if inspector_firma:
         p_firma = doc.add_paragraph()
         p_firma.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        p_run = p_firma.add_run(f"\nGenerado por: {inspector_firma}")
+        p_run = p_firma.add_run(f"\nElaborado por: {inspector_firma}")
         p_run.font.bold = True
         p_run.font.size = Pt(9.5)
         p_run.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
@@ -1034,7 +1034,7 @@ st.markdown("---")
 st.markdown("#### Responsable del Informe")
 val_insp = st.session_state.get('inspector_firma', '')
 idx_insp = LISTA_INSPECTORES.index(val_insp) + 1 if val_insp in LISTA_INSPECTORES else 0
-inspector_firma = st.selectbox("👷‍♂️ Generado por:", [""] + LISTA_INSPECTORES, index=idx_insp, key='inspector_firma')
+inspector_firma = st.selectbox("👷‍♂️ Elaborado por:", [""] + LISTA_INSPECTORES, index=idx_insp, key='inspector_firma')
 
 datos_encabezado = {
     'num_informe': num_informe,
