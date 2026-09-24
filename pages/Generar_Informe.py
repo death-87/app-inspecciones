@@ -99,8 +99,8 @@ def conectar_google_drive():
 # =========================================================
 # FUNCIONES DE ALMACENAMIENTO EN GOOGLE DRIVE
 # =========================================================
-def subir_imagen_a_drive(nombre_archivo, img_bytes):
-    """Subes bytes de una imagen a Google Drive y retorna su URL directa."""
+ddef subir_imagen_a_drive(nombre_archivo, img_bytes):
+    """Subes bytes de una imagen a Google Drive indicando soporte de unidades compartidas."""
     try:
         drive_service = conectar_google_drive()
         file_metadata = {
@@ -108,10 +108,13 @@ def subir_imagen_a_drive(nombre_archivo, img_bytes):
             'parents': [DRIVE_FOLDER_ID]
         }
         media = MediaIoBaseUpload(BytesIO(img_bytes), mimetype='image/jpeg', resumable=True)
+        
+        # supportsAllDrives=True permite subir archivos a carpetas compartidas sin error de cuota
         archivo_creado = drive_service.files().create(
             body=file_metadata,
             media_body=media,
-            fields='id'
+            fields='id',
+            supportsAllDrives=True
         ).execute()
         
         file_id = archivo_creado.get('id')
@@ -119,7 +122,8 @@ def subir_imagen_a_drive(nombre_archivo, img_bytes):
         # Opcional: Hacer accesible el archivo por enlace de lectura
         drive_service.permissions().create(
             fileId=file_id,
-            body={'role': 'reader', 'type': 'anyone'}
+            body={'role': 'reader', 'type': 'anyone'},
+            supportsAllDrives=True
         ).execute()
 
         # Enlace directo para descarga/visualización
@@ -127,16 +131,6 @@ def subir_imagen_a_drive(nombre_archivo, img_bytes):
     except Exception as e:
         st.error(f"Error al subir imagen '{nombre_archivo}' a Google Drive: {e}")
         return None
-
-def descargar_bytes_desde_url(url):
-    """Descarga los bytes de la imagen a partir del enlace de Google Drive o URL pública."""
-    try:
-        res = requests.get(url, timeout=10)
-        if res.status_code == 200:
-            return res.content
-    except Exception:
-        pass
-    return None
 
 # =========================================================
 # LECTURA / ESCRITURA EN HISTORIAL
