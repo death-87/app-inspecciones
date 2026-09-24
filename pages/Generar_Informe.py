@@ -18,8 +18,8 @@ from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
-from docx.oxml import parse_xml
-from docx.oxml.ns import nsdecls
+from docx.oxml import parse_xml, OxmlElement
+from docx.oxml.ns import nsdecls, qn
 
 # Librerías para generación de PDF
 from reportlab.lib.pagesizes import letter
@@ -94,6 +94,25 @@ def set_cell_background(cell, fill_hex):
     tcPr.append(shd)
 
 
+def agregar_numero_pagina_word(run):
+    """Inserta el campo dinámico PAGE en un campo de texto en Word."""
+    fldChar1 = OxmlElement('w:fldChar')
+    fldChar1.set(qn('w:fldCharType'), 'begin')
+    instrText = OxmlElement('w:instrText')
+    instrText.set(qn('xml:space'), 'preserve')
+    instrText.text = "PAGE"
+    fldChar2 = OxmlElement('w:fldChar')
+    fldChar2.set(qn('w:fldCharType'), 'separate')
+    fldChar3 = OxmlElement('w:fldChar')
+    fldChar3.set(qn('w:fldCharType'), 'end')
+    
+    r = run._r
+    r.append(fldChar1)
+    r.append(instrText)
+    r.append(fldChar2)
+    r.append(fldChar3)
+
+
 # =========================================================
 # CONEXIÓN MEDIANTE SERVICE ACCOUNT
 # =========================================================
@@ -134,7 +153,6 @@ def conectar_google_drive_service_account():
 # =========================================================
 
 def extraer_id_carpeta(input_text):
-    """Extrae el ID de la carpeta de Drive a partir de una URL o devuelve el ID directamente."""
     match = re.search(r'folders/([a-zA-Z0-9_-]+)', input_text)
     if match:
         return match.group(1)
@@ -142,8 +160,6 @@ def extraer_id_carpeta(input_text):
 
 
 def obtener_imagenes_desde_drive_folder(folder_input):
-    """Obtiene y descarga en memoria las imágenes (separando fotos normales de esquemas).
-       Extrae el pie de foto si el nombre del archivo tiene el formato '1_Mi pie de foto.jpg'."""
     folder_id = extraer_id_carpeta(folder_input)
     if not folder_id:
         return [], [], "No se proporcionó un ID o enlace válido de carpeta."
@@ -171,14 +187,12 @@ def obtener_imagenes_desde_drive_folder(folder_input):
         fotos = []
         esquemas = []
 
-        # Separar archivos que contengan la palabra 'esquema' en el nombre
         files_fotos = [f for f in files if "esquema" not in f['name'].lower()]
         files_esquemas = [f for f in files if "esquema" in f['name'].lower()]
 
         files_fotos_ordenados = sorted(files_fotos, key=lambda f: obtener_numero_archivo(f['name']))
         files_esquemas_ordenados = sorted(files_esquemas, key=lambda f: obtener_numero_archivo(f['name']))
 
-        # Procesar Fotografías Normales
         for index, file in enumerate(files_fotos_ordenados):
             request = drive_service.files().get_media(fileId=file['id'])
             fh = BytesIO()
@@ -190,11 +204,7 @@ def obtener_imagenes_desde_drive_folder(folder_input):
             
             file_name = file['name']
             num_extraido = obtener_numero_archivo(file_name)
-            
-            # Remover extensión (.jpg, .png, etc.)
             name_without_ext = re.sub(r'\.[a-zA-Z0-9]+$', '', file_name)
-            
-            # Buscar texto después del guion bajo '_'
             match_texto = re.search(r'_(.+)$', name_without_ext)
             
             if match_texto:
@@ -204,7 +214,6 @@ def obtener_imagenes_desde_drive_folder(folder_input):
                 
             fotos.append((fh.read(), caption))
 
-        # Procesar Esquemas
         for index, file in enumerate(files_esquemas_ordenados):
             request = drive_service.files().get_media(fileId=file['id'])
             fh = BytesIO()
@@ -570,11 +579,51 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
 def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imagenes_procesadas, esquemas_procesados, inspector_firma):
     doc = Document()
     section = doc.sections[0]
-    section.top_margin = Inches(0.8)
-    section.bottom_margin = Inches(0.8)
+    section.top_margin = Inches(0.9)
+    section.bottom_margin = Inches(0.9)
     section.left_margin = Inches(0.8)
     section.right_margin = Inches(0.8)
 
+    # =========================================================
+    # ENCABEZADO WORD (LOGO PARTE SUPERIOR IZQUIERDA)
+    # =========================================================
+    header = section.header
+    header_p = header.paragraphs[0]
+    header_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    
+    logo_bytes = obtener_bytes_imagen(URL_LOGO_GITHUB)
+    if logo_bytes:
+        try:
+            header_p.add_run().add_picture(BytesIO(logo_bytes), width=Inches(1.8))
+        except Exception:
+            pass
+
+    # =========================================================
+    # PIE DE PÁGINA WORD (TEXTO CENTRADO Y NUMERACIÓN DE PÁGINA)
+    # =========================================================
+    footer = section.footer
+    footer_p = footer.paragraphs[0]
+    footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    run_ft_1 = footer_p.add_run("SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.\n")
+    run_ft_1.font.size = Pt(7)
+    run_ft_1.font.name = "Helvetica"
+    run_ft_1.font.color.rgb = RGBColor(107, 114, 128)
+
+    run_ft_2 = footer_p.add_run("CONTRATO N° AC 31104857\n")
+    run_ft_2.font.size = Pt(7)
+    run_ft_2.font.name = "Helvetica"
+    run_ft_2.font.color.rgb = RGBColor(107, 114, 128)
+
+    run_ft_3 = footer_p.add_run("Pág. ")
+    run_ft_3.font.size = Pt(7)
+    run_ft_3.font.name = "Helvetica"
+    run_ft_3.font.color.rgb = RGBColor(107, 114, 128)
+    agregar_numero_pagina_word(run_ft_3)
+
+    # =========================================================
+    # CUERPO DEL INFORME WORD
+    # =========================================================
     p_title = doc.add_paragraph()
     p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run_title = p_title.add_run("INFORME DE INSPECCIÓN VISUAL")
