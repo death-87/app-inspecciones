@@ -142,7 +142,8 @@ def extraer_id_carpeta(input_text):
 
 
 def obtener_imagenes_desde_drive_folder(folder_input):
-    """Obtiene y descarga en memoria las imágenes (separando fotos normales de esquemas)."""
+    """Obtiene y descarga en memoria las imágenes (separando fotos normales de esquemas).
+       Extrae el pie de foto si el nombre del archivo tiene el formato '1_Mi pie de foto.jpg'."""
     folder_id = extraer_id_carpeta(folder_input)
     if not folder_id:
         return [], [], "No se proporcionó un ID o enlace válido de carpeta."
@@ -187,9 +188,21 @@ def obtener_imagenes_desde_drive_folder(folder_input):
                 _, done = downloader.next_chunk()
             fh.seek(0)
             
-            num_extraido = obtener_numero_archivo(file['name'])
-            caption_default = f"{num_extraido}: vista general de equipo" if num_extraido != 9999 else f"{index+1}: detalle de inspección"
-            fotos.append((fh.read(), caption_default))
+            file_name = file['name']
+            num_extraido = obtener_numero_archivo(file_name)
+            
+            # Remover extensión (.jpg, .png, etc.)
+            name_without_ext = re.sub(r'\.[a-zA-Z0-9]+$', '', file_name)
+            
+            # Buscar texto después del guion bajo '_'
+            match_texto = re.search(r'_(.+)$', name_without_ext)
+            
+            if match_texto:
+                caption = match_texto.group(1).strip()
+            else:
+                caption = f"{num_extraido}: vista general de equipo" if num_extraido != 9999 else f"{index+1}: detalle de inspección"
+                
+            fotos.append((fh.read(), caption))
 
         # Procesar Esquemas
         for index, file in enumerate(files_esquemas_ordenados):
@@ -201,8 +214,16 @@ def obtener_imagenes_desde_drive_folder(folder_input):
                 _, done = downloader.next_chunk()
             fh.seek(0)
             
-            caption_esquema = f"Esquema {index+1}: Ubicación de hallazgos y sectores afectados"
-            esquemas.append((fh.read(), caption_esquema))
+            file_name = file['name']
+            name_without_ext = re.sub(r'\.[a-zA-Z0-9]+$', '', file_name)
+            match_texto = re.search(r'_(.+)$', name_without_ext)
+            
+            if match_texto:
+                caption = match_texto.group(1).strip()
+            else:
+                caption = f"Esquema {index+1}: Ubicación de hallazgos y sectores afectados"
+                
+            esquemas.append((fh.read(), caption))
 
         msg = f"✅ Se cargaron exitosamente {len(fotos)} fotografías y {len(esquemas)} esquemas desde Google Drive."
         return fotos, esquemas, msg
@@ -515,7 +536,7 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
             ]))
             story.append(t_pair)
 
-    # 6. ESQUEMA DE EQUIPO Y SECTORES CON DAÑOS (PÁGINA COMPLETA POR FOTO)
+    # 6. ESQUEMA DE EQUIPO Y SECTORES CON DAÑOS
     if esquemas_procesados:
         story.append(PageBreak())
         story.append(Paragraph("6. ESQUEMA DE EQUIPO Y SECTORES CON DAÑOS", sec_heading_style))
@@ -527,7 +548,6 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
                 story.append(Paragraph(f"6. ESQUEMA DE EQUIPO Y SECTORES CON DAÑOS (Continuación - Esquema {idx})", sec_heading_style))
                 story.append(Spacer(1, 6))
 
-            # Tamaño grande aprovechando el ancho de la página (Ancho máximo ~18.5 cm, Alto ~13.5 cm)
             img_esq = RLImage(BytesIO(esq_bytes), width=18.5*cm, height=13.5*cm)
             t_esq = Table([[img_esq], [Paragraph(f"<b>{label_esq}</b>", cell_body)]], colWidths=[552])
             t_esq.setStyle(TableStyle([
