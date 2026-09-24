@@ -33,30 +33,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# =========================================================
-# AUTENTICACIÓN GOOGLE OAUTH Y PERSISTENCIA DE TOKEN
-# =========================================================
-if not st.user.is_logged_in:
-    st.title("🔐 Autorización de Google Drive")
-    st.write(
-        "Para ingresar al Sistema de Gestión de Activos Físicos "
-        "debes iniciar sesión con tu cuenta de Google autorizada."
-    )
-    if st.button("🔑 Iniciar sesión con Google", type="primary"):
-        st.login()
-    st.stop()
-
-# Extracción y guardado del token en st.session_state para subpáginas
-access_token_obtenido = None
-
-if hasattr(st.user, "tokens") and st.user.tokens:
-    access_token_obtenido = st.user.tokens.get("access") or st.user.tokens.get("access_token")
-elif hasattr(st.user, "access_token"):
-    access_token_obtenido = st.user.access_token
-
-if access_token_obtenido:
-    st.session_state["access_token"] = access_token_obtenido
-
 # 🔗 URLs RAW DE LOGO, FRANJA Y PERSONAJE EN GITHUB
 URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/logo.png"
 URL_FRANJA_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/franja.png"
@@ -107,8 +83,9 @@ def obtener_bytes_personaje():
     return obtener_bytes_imagen(URL_PERSONAJE_GITHUB)
 
 # =========================================================
-# CONEXIÓN CON GOOGLE SHEETS
+# CONEXIÓN CON GOOGLE SHEETS (MEDIANTE SERVICE ACCOUNT)
 # =========================================================
+@st.cache_resource
 def conectar_google_sheets():
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
@@ -305,17 +282,13 @@ semana_actual_num = datetime.now().isocalendar()[1]
 idx_semana_defecto = max(0, min(semana_actual_num - 1, len(LISTA_SEMANAS) - 1))
 
 # =========================================================
-# BARRA LATERAL (LOGIN Y CONTROL DE ACCESO)
+# BARRA LATERAL (LOGIN INTERNO Y CONTROL DE ACCESO)
 # =========================================================
 logo_bytes_sidebar = obtener_bytes_logo()
 if logo_bytes_sidebar:
-    st.sidebar.image(logo_bytes_sidebar, width="stretch")
+    st.sidebar.image(logo_bytes_sidebar, use_container_width=True)
 
-st.sidebar.markdown(f"👤 Google: **{st.user.email}**")
-st.sidebar.button("🔒 Salir de Google", on_click=st.logout)
-st.sidebar.markdown("---")
-
-st.sidebar.markdown("### 🔐 Control de Acceso")
+st.sidebar.markdown("### 🔐 Control de Acceso Interno")
 if not st.session_state.autenticado:
     with st.sidebar.form("form_login"):
         user_input = st.text_input("Usuario:")
@@ -350,7 +323,7 @@ st.markdown("<h4 style='color: #F97316; margin-top: 5px;'><i>Control Operativo d
 
 franja_bytes = obtener_bytes_franja()
 if franja_bytes:
-    st.image(franja_bytes, width="stretch")
+    st.image(franja_bytes, use_container_width=True)
 
 # =========================================================
 # MENÚ NAVEGACIÓN PRINCIPAL
@@ -474,7 +447,7 @@ elif menu == "📊 Historial e Informes":
     st.subheader("🔍 Consulta de Historial")
     df_historial = cargar_datos_sheets()
     if not df_historial.empty:
-        st.dataframe(df_historial, width="stretch")
+        st.dataframe(df_historial, use_container_width=True)
         csv_data = df_historial.to_csv(index=False).encode('utf-8')
         st.download_button("📥 Descargar Tabla a CSV", csv_data, "historial.csv", "text/csv")
     else:
@@ -487,7 +460,7 @@ elif menu == "📈 Reporte Planificación":
     st.subheader("📅 Planificación de Operaciones")
     df_plan = cargar_datos_planificacion()
     if not df_plan.empty:
-        st.dataframe(df_plan, width="stretch")
+        st.dataframe(df_plan, use_container_width=True)
     else:
         st.info("ℹ️ Sin datos de planificación.")
 
