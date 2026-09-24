@@ -125,9 +125,27 @@ def conectar_google_sheets():
 
 @st.cache_resource
 def conectar_google_drive():
-    """Mantiene en caché la conexión con el servicio de Google Drive."""
-    credentials = obtener_credenciales()
-    return build('drive', 'v3', credentials=credentials)
+    """Conecta Google Drive usando la cuenta personal autorizada mediante OAuth."""
+    if not st.user.is_logged_in:
+        st.error("Debes iniciar sesión con Google para acceder a tu Google Drive.")
+        return None
+
+    try:
+        access_token = st.user.tokens["access"]
+
+        credentials = Credentials(
+            token=access_token
+        )
+
+        return build(
+            "drive",
+            "v3",
+            credentials=credentials
+        )
+
+    except Exception as e:
+        st.error(f"Error al conectar con Google Drive mediante OAuth: {e}")
+        return None
 
 # =========================================================
 # FUNCIONES DE ALMACENAMIENTO EN GOOGLE DRIVE
