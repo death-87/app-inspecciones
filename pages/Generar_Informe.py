@@ -604,11 +604,9 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     footer = section.footer
     footer_p = footer.paragraphs[0]
     
-    # Crear una tabla de 1 fila x 2 columnas dentro del pie de página
     ft_table = footer.add_table(rows=1, cols=2, width=Inches(6.8))
     ft_table.alignment = WD_TABLE_ALIGNMENT.CENTER
     
-    # Quitar bordes a la tabla del pie de página
     tblPr = ft_table._tbl.tblPr
     borders = parse_xml(r'<w:tblBorders %s><w:top w:val="none"/><w:left w:val="none"/><w:bottom w:val="none"/><w:right w:val="none"/><w:insideH w:val="none"/><w:insideV w:val="none"/></w:tblBorders>' % nsdecls('w'))
     tblPr.append(borders)
@@ -618,7 +616,6 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     cell_left.width = Inches(5.3)
     cell_right.width = Inches(1.5)
 
-    # Columna Izquierda: Texto del contrato centrado
     p_left = cell_left.paragraphs[0]
     p_left.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run_ft_1 = p_left.add_run("SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.\n")
@@ -631,7 +628,6 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     run_ft_2.font.name = "Helvetica"
     run_ft_2.font.color.rgb = RGBColor(107, 114, 128)
 
-    # Columna Derecha: Número de página alineado a la derecha
     p_right = cell_right.paragraphs[0]
     p_right.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     run_ft_3 = p_right.add_run("Pág. ")
@@ -640,7 +636,6 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     run_ft_3.font.color.rgb = RGBColor(107, 114, 128)
     agregar_numero_pagina_word(run_ft_3)
 
-    # Limpiar el párrafo inicial sobrante del pie de página
     footer._element.remove(footer_p._element)
 
     # =========================================================
@@ -732,7 +727,7 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
                 r_cont.font.size = Pt(8.5)
                 r_cont.font.color.rgb = RGBColor(0x1F, 0x29, 0x37)
 
-    # 5. REGISTROS FOTOGRÁFICOS
+    # 5. REGISTROS FOTOGRÁFICOS (3 FILAS X 2 COLUMNAS = 6 FOTOS POR PÁGINA)
     doc.add_page_break()
     p_sec5 = doc.add_paragraph()
     r_sec5 = p_sec5.add_run("5. REGISTROS FOTOGRÁFICOS")
@@ -741,34 +736,46 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     r_sec5.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
 
     if imagenes_procesadas:
-        img_table = doc.add_table(rows=0, cols=2)
-        img_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        total_fotos = len(imagenes_procesadas)
+        # Procesar en bloques de máximo 6 fotos por página
+        for i in range(0, total_fotos, 6):
+            if i > 0:
+                doc.add_page_break()
+                p_sec5_cont = doc.add_paragraph()
+                r_sec5_cont = p_sec5_cont.add_run("5. REGISTROS FOTOGRÁFICOS (Continuación)")
+                r_sec5_cont.font.bold = True
+                r_sec5_cont.font.size = Pt(11)
+                r_sec5_cont.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
 
-        for i in range(0, len(imagenes_procesadas), 2):
-            row_cells = img_table.add_row().cells
+            bloque_fotos = imagenes_procesadas[i:i+6]
+            img_table = doc.add_table(rows=0, cols=2)
+            img_table.alignment = WD_TABLE_ALIGNMENT.CENTER
 
-            img_data1, label1 = imagenes_procesadas[i]
-            p1 = row_cells[0].paragraphs[0]
-            p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            p1.add_run().add_picture(BytesIO(img_data1), width=Inches(3.5))
+            for j in range(0, len(bloque_fotos), 2):
+                row_cells = img_table.add_row().cells
 
-            p1_sub = row_cells[0].add_paragraph()
-            p1_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            r1_sub = p1_sub.add_run(str(label1))
-            r1_sub.font.bold = True
-            r1_sub.font.size = Pt(8)
+                img_data1, label1 = bloque_fotos[j]
+                p1 = row_cells[0].paragraphs[0]
+                p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p1.add_run().add_picture(BytesIO(img_data1), width=Inches(3.2))
 
-            if i + 1 < len(imagenes_procesadas):
-                img_data2, label2 = imagenes_procesadas[i+1]
-                p2 = row_cells[1].paragraphs[0]
-                p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                p2.add_run().add_picture(BytesIO(img_data2), width=Inches(3.5))
+                p1_sub = row_cells[0].add_paragraph()
+                p1_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                r1_sub = p1_sub.add_run(str(label1))
+                r1_sub.font.bold = True
+                r1_sub.font.size = Pt(8)
 
-                p2_sub = row_cells[1].add_paragraph()
-                p2_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                r2_sub = p2_sub.add_run(str(label2))
-                r2_sub.font.bold = True
-                r2_sub.font.size = Pt(8)
+                if j + 1 < len(bloque_fotos):
+                    img_data2, label2 = bloque_fotos[j+1]
+                    p2 = row_cells[1].paragraphs[0]
+                    p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    p2.add_run().add_picture(BytesIO(img_data2), width=Inches(3.2))
+
+                    p2_sub = row_cells[1].add_paragraph()
+                    p2_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    r2_sub = p2_sub.add_run(str(label2))
+                    r2_sub.font.bold = True
+                    r2_sub.font.size = Pt(8)
 
     # 6. ESQUEMAS EN WORD
     if esquemas_procesados:
