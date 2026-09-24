@@ -99,7 +99,7 @@ def conectar_google_drive():
 # =========================================================
 # FUNCIONES DE ALMACENAMIENTO EN GOOGLE DRIVE
 # =========================================================
-ddef subir_imagen_a_drive(nombre_archivo, img_bytes):
+def subir_imagen_a_drive(nombre_archivo, img_bytes):
     """Subes bytes de una imagen a Google Drive indicando soporte de unidades compartidas."""
     try:
         drive_service = conectar_google_drive()
