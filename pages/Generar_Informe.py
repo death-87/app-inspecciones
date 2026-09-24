@@ -435,12 +435,16 @@ def dibujar_plantilla_pdf(canvas, doc):
         try:
             img_stream = BytesIO(logo_bytes)
             img = ImageReader(img_stream)
-            # Logo posicionado más arriba
-            canvas.drawImage(img, 30, letter[1] - (1.2 * cm) - 35, width=120, height=45, preserveAspectRatio=True, mask='auto')
+            # Logo en la esquina superior derecha y pegado más al borde superior
+            width_logo = 120
+            height_logo = 45
+            x_pos = letter[0] - width_logo - 30
+            y_pos = letter[1] - height_logo - 15
+            canvas.drawImage(img, x_pos, y_pos, width=width_logo, height=height_logo, preserveAspectRatio=True, mask='auto')
         except Exception:
             pass
 
-    # Pie de página más pequeño
+    # Pie de página pequeño
     canvas.setFont("Helvetica", 6)
     canvas.setFillColor(colors.HexColor("#6B7280"))
     canvas.drawCentredString(letter[0] / 2.0, 18, "SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.")
@@ -589,19 +593,19 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     font_normal.name = 'Calibri'
     font_normal.size = Pt(11)
 
-    # Márgenes superiores e inferiores reducidos a 0.5 in (1.27 cm) para aprovechar espacio
+    # Margen superior muy ajustado (0.3 in) para pegar el logo más arriba
     section = doc.sections[0]
-    section.top_margin = Inches(0.5)
+    section.top_margin = Inches(0.3)
     section.bottom_margin = Inches(0.5)
     section.left_margin = Inches(0.8)
     section.right_margin = Inches(0.8)
 
     # =========================================================
-    # ENCABEZADO WORD (LOGO PARTE SUPERIOR IZQUIERDA Y MÁS ARRIBA)
+    # ENCABEZADO WORD (LOGO ESQUINA SUPERIOR DERECHA)
     # =========================================================
     header = section.header
     header_p = header.paragraphs[0]
-    header_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    header_p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     header_p.paragraph_format.space_before = Pt(0)
     header_p.paragraph_format.space_after = Pt(0)
     
@@ -613,7 +617,7 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
             pass
 
     # =========================================================
-    # PIE DE PÁGINA WORD (MÁS PEQUEÑO)
+    # PIE DE PÁGINA WORD (6pt)
     # =========================================================
     footer = section.footer
     footer_p = footer.paragraphs[0]
@@ -635,7 +639,6 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
     p_left.paragraph_format.space_before = Pt(0)
     p_left.paragraph_format.space_after = Pt(0)
     
-    # Texto de pie de página en 6pt
     run_ft_1 = p_left.add_run("SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.\n")
     run_ft_1.font.name = "Calibri"
     run_ft_1.font.size = Pt(6)
@@ -755,7 +758,6 @@ def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, ima
                 r_subsec.font.size = Pt(11)
                 r_subsec.font.color.rgb = RGBColor(0x61, 0x9B, 0x40)
 
-                # Párrafo de contenido sin justificar (alineación izquierda por defecto)
                 p_cont = doc.add_paragraph()
                 r_cont = p_cont.add_run(sub['contenido'] if sub['contenido'] else "-")
                 r_cont.font.name = "Calibri"
