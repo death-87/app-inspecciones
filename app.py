@@ -44,12 +44,7 @@ SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 # =========================================================
 # GESTIÓN DE ROLES INTERNOS Y SESIÓN
 # =========================================================
-USUARIOS_SISTEMA = {
-    "invitado": {"password": "123", "rol": "invitado", "nombre": "Visitante / Solo Lectura"},
-    "jnavarrete": {"password": "Mechanix123", "rol": "operador", "nombre": "jnavarrete (Agregar Datos)"},
-    "jhernandez": {"password": "jorge2026", "rol": "operador", "nombre": "jhernandez (Agregar Datos)"},
-    "admin": {"password": "Mechanix123", "rol": "admin", "nombre": "Administrador General"}
-}
+USUARIOS_SISTEMA = {'jnavarrete': {'password': 'Mechanix123', 'rol': 'operador', 'nombre': 'jnavarrete (Agregar Datos)'}}
 
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
@@ -288,6 +283,13 @@ logo_bytes_sidebar = obtener_bytes_logo()
 if logo_bytes_sidebar:
     st.sidebar.image(logo_bytes_sidebar, use_container_width=True)
 
+# Invalidar también sesiones anteriores de cuentas que ya no tienen acceso.
+if st.session_state.usuario_actual not in USUARIOS_SISTEMA:
+    st.session_state.autenticado = False
+    st.session_state.usuario_actual = None
+    st.session_state.rol_actual = "invitado"
+    st.session_state.nombre_usuario = "Visitante"
+
 st.sidebar.markdown("### 🔐 Control de Acceso Interno")
 if not st.session_state.autenticado:
     with st.sidebar.form("form_login"):
@@ -303,7 +305,7 @@ if not st.session_state.autenticado:
                 st.rerun()
             else:
                 st.sidebar.error("❌ Usuario o contraseña incorrectos")
-    st.sidebar.info("ℹ️ Entrando como **Visitante** por defecto.")
+    st.sidebar.info("ℹ️ Inicia sesión con tu cuenta para acceder a la aplicación.")
 else:
     st.sidebar.success(f"👤 Conectado:\n**{st.session_state.nombre_usuario}**")
     if st.sidebar.button("🚪 Cerrar Sesión Interna"):
@@ -312,6 +314,11 @@ else:
         st.session_state.rol_actual = "invitado"
         st.session_state.nombre_usuario = "Visitante"
         st.rerun()
+
+# No renderizar módulos ni consultar Google Sheets sin una sesión autorizada.
+if not st.session_state.autenticado or st.session_state.usuario_actual not in USUARIOS_SISTEMA:
+    st.info("🔐 Acceso privado. Inicia sesión en la barra lateral.")
+    st.stop()
 
 st.sidebar.markdown("---")
 
