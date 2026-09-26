@@ -1,0 +1,1273 @@
+import io
+import re
+import json
+import hashlib
+import requests
+import streamlit as st
+import pandas as pd
+import gspread
+
+from google.oauth2.service_account import Credentials as ServiceAccountCredentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+
+from datetime import date, datetime
+from io import BytesIO
+
+# Librerías para generación de Word
+from docx import Document
+from docx.shared import Inches, Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.oxml import parse_xml, OxmlElement
+from docx.oxml.ns import nsdecls, qn
+
+# Librerías para generación de PDF
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+    Image as RLImage,
+    PageBreak
+)
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.lib.units import cm
+from reportlab.lib.utils import ImageReader
+
+
+# =========================================================
+# CONFIGURACIÓN DE LA PÁGINA
+# =========================================================
+
+st.set_page_config(
+    page_title="Generar Informe Visual",
+    page_icon="📄",
+    layout="wide"
+)
+
+
+# Cada página debe validar la sesión antes de consultar servicios externos.
+if not st.session_state.get("autenticado", False) or st.session_state.get("usuario_actual") != "jnavarrete":
+    st.info("Acceso privado. Inicia sesión en la página principal con jnavarrete.")
+    st.stop()
+
+
+def limpiar_editor():
+    campos = {"num_informe", "ot", "fecha", "unidad", "tag", "descripcion", "aca", "motivo", "alcance", "inspector_firma", "drive_link", "buscar_equipo", "unidad_selector", "unidad_manual", "chk_eliminar", "exportacion_visual", "informe_guardado_selector", "guardado_visual", "carpeta_imagenes_actual"}
+    prefijos = ("cant_subpuntos_sec_", "tit_", "cont_", "img_resguardada_", "esq_resguardado_")
+    for clave in list(st.session_state):
+        if clave in campos or clave.startswith(prefijos):
+            del st.session_state[clave]
+    st.session_state["imagenes_cargadas_resguardo"] = []
+    st.session_state["esquemas_cargados_resguardo"] = []
+
+
+def limpiar_leyendas():
+    for clave in list(st.session_state):
+        if clave.startswith(("img_resguardada_", "esq_resguardado_")):
+            del st.session_state[clave]
+
+
+def manifiesto_imagenes(imagenes):
+    return [{"sha256": hashlib.sha256(datos).hexdigest(), "leyenda": leyenda}
+            for datos, leyenda in imagenes]
+
+
+def restaurar_imagenes(imagenes, manifiesto):
+    if manifiesto is None:
+        return imagenes
+    disponibles = {hashlib.sha256(datos).hexdigest(): datos for datos, _ in imagenes}
+    faltantes = [m for m in manifiesto if m["sha256"] not in disponibles]
+    if faltantes:
+        raise ValueError("Las imágenes de Drive cambiaron o faltan archivos del informe guardado. Restaura la carpeta antes de recuperar esta versión.")
+    return [(disponibles[m["sha256"]], m["leyenda"]) for m in manifiesto]
+
+
+def insertar_imagen_word(parrafo, datos, ancho, alto):
+    from PIL import Image, ImageOps
+    with Image.open(BytesIO(datos)) as original_img:
+        imagen = ImageOps.exif_transpose(original_img).convert("RGB")
+        proporcion = min(ancho / imagen.width, alto / imagen.height)
+        flujo = BytesIO()
+        imagen.save(flujo, format="PNG")
+        flujo.seek(0)
+        parrafo.add_run().add_picture(flujo, width=Inches(imagen.width * proporcion), height=Inches(imagen.height * proporcion))
+    parrafo.paragraph_format.keep_with_next = True
+
+
+# =========================================================
+# CONFIGURACIÓN GENERAL
+# =========================================================
+
+URL_LOGO_GITHUB = (
+    "https://raw.githubusercontent.com/death-87/"
+    "app-inspecciones/main/logo.png"
+)
+
+SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
+
+LISTA_INSPECTORES = [
+    "Juan Navarrete",
+    "Jorge Hernandez",
+    "Arlem Sarmiento",
+    "Harold Castillo",
+    "Miguel Chirinos"
+]
+
+LISTA_PLANTAS = [
+    "A0AEX", "A0ALQ", "A0BUT", "A0CCK", "A0CCR", "A0CKR",
+    "A0HDG", "A0HDT", "A0HCK", "A0ISO", "A0LAB", "A0MHC",
+    "A0NHT", "A0SAR", "A0SHP", "A0SWS", "AACID", "AAMAR",
+    "AAMIN", "AAMPL", "AANTO", "AAREF", "AASER", "AALQU",
+    "ADESO", "ADEV1", "ADEV2", "ADIPE", "AE501", "ALNHT",
+    "ALPG1", "ALPG2", "ALPG3", "AMACO", "AMDEA", "AMRX1",
+    "AMRX2", "AMRX3", "AMRX4", "AMVPR", "AOLEO", "APBMP",
+    "APBTQ", "APCAR", "APFEN", "APRCO", "ARPLU", "AREFO",
+    "AREMO", "ARILE", "ASAIC", "ASOLV", "ASPLI", "ASRCO",
+    "ASUEL", "ASVAQ", "ASVAP", "ASWS2", "ASYBR", "ASEFL",
+    "ASEFQ", "ATOP1", "ATOP2", "ATRAG", "AURA1", "AURA2",
+    "AURA3", "AVAC1", "AVAC2", "ACOKE"
+]
+
+
+# =========================================================
+# FUNCIONES AUXILIARES WORD
+# =========================================================
+
+def set_cell_background(cell, fill_hex):
+    tcPr = cell._tc.get_or_add_tcPr()
+    shd = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{fill_hex}"/>')
+    tcPr.append(shd)
+
+
+def agregar_numero_pagina_word(run):
+    """Inserta el campo dinámico PAGE en un campo de texto en Word."""
+    fldChar1 = OxmlElement('w:fldChar')
+    fldChar1.set(qn('w:fldCharType'), 'begin')
+    instrText = OxmlElement('w:instrText')
+    instrText.set(qn('xml:space'), 'preserve')
+    instrText.text = "PAGE"
+    fldChar2 = OxmlElement('w:fldChar')
+    fldChar2.set(qn('w:fldCharType'), 'separate')
+    fldChar3 = OxmlElement('w:fldChar')
+    fldChar3.set(qn('w:fldCharType'), 'end')
+    
+    r = run._r
+    r.append(fldChar1)
+    r.append(instrText)
+    r.append(fldChar2)
+    r.append(fldChar3)
+
+
+# =========================================================
+# CONEXIÓN MEDIANTE SERVICE ACCOUNT
+# =========================================================
+
+@st.cache_resource
+def obtener_credenciales_service_account():
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds_dict = dict(st.secrets["connections"]["gsheets"])
+    if "private_key" in creds_dict:
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+    return ServiceAccountCredentials.from_service_account_info(
+        creds_dict,
+        scopes=scopes
+    )
+
+
+@st.cache_resource
+def conectar_google_sheets():
+    credentials = obtener_credenciales_service_account()
+    client = gspread.authorize(credentials)
+    return client.open_by_key(SPREADSHEET_ID)
+
+
+def conectar_google_drive_service_account():
+    try:
+        credentials = obtener_credenciales_service_account()
+        return build("drive", "v3", credentials=credentials)
+    except Exception as e:
+        st.error(f"Error conectando a Google Drive con Service Account: {e}")
+        return None
+
+
+# =========================================================
+# LECTURA DE CARPETAS EN GOOGLE DRIVE (FOTOS Y ESQUEMAS)
+# =========================================================
+
+def extraer_id_carpeta(input_text):
+    match = re.search(r'folders/([a-zA-Z0-9_-]+)', input_text)
+    if match:
+        return match.group(1)
+    return input_text.strip()
+
+
+def obtener_imagenes_desde_drive_folder(folder_input):
+    folder_id = extraer_id_carpeta(folder_input)
+    if not folder_id:
+        return [], [], "No se proporcionó un ID o enlace válido de carpeta."
+
+    try:
+        drive_service = conectar_google_drive_service_account()
+        if not drive_service:
+            return [], [], "No se pudo autenticar el servicio de Google Drive."
+
+        query = f"'{folder_id}' in parents and (mimeType contains 'image/' or mimeType = 'application/octet-stream') and trashed = false"
+        
+        results = drive_service.files().list(
+            q=query, 
+            fields="nextPageToken, files(id, name, mimeType)",
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+            pageSize=100
+        ).execute()
+        
+        files = results.get('files', [])
+        while results.get("nextPageToken"):
+            results = drive_service.files().list(
+                q=query, fields="nextPageToken, files(id, name, mimeType)",
+                supportsAllDrives=True, includeItemsFromAllDrives=True,
+                pageSize=100, pageToken=results["nextPageToken"]
+            ).execute()
+            files.extend(results.get("files", []))
+
+        if not files:
+            return [], [], "No se encontraron imágenes en la carpeta de Google Drive."
+
+        fotos = []
+        esquemas = []
+
+        files_fotos = [f for f in files if "esquema" not in f['name'].lower()]
+        files_esquemas = [f for f in files if "esquema" in f['name'].lower()]
+
+        files_fotos_ordenados = sorted(files_fotos, key=lambda f: obtener_numero_archivo(f['name']))
+        files_esquemas_ordenados = sorted(files_esquemas, key=lambda f: obtener_numero_archivo(f['name']))
+
+        for index, file in enumerate(files_fotos_ordenados):
+            request = drive_service.files().get_media(fileId=file['id'])
+            fh = BytesIO()
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+            fh.seek(0)
+            
+            file_name = file['name']
+            num_extraido = obtener_numero_archivo(file_name)
+            num_foto_str = str(num_extraido) if num_extraido != 9999 else str(index + 1)
+            
+            name_without_ext = re.sub(r'\.[a-zA-Z0-9]+$', '', file_name)
+            match_texto = re.search(r'_(.+)$', name_without_ext)
+            
+            if match_texto:
+                caption = f"Foto {num_foto_str}: {match_texto.group(1).strip()}"
+            else:
+                caption = f"Foto {num_foto_str}: vista general de equipo" if num_extraido != 9999 else f"Foto {num_foto_str}: detalle de inspección"
+                
+            fotos.append((fh.read(), caption))
+
+        for index, file in enumerate(files_esquemas_ordenados):
+            request = drive_service.files().get_media(fileId=file['id'])
+            fh = BytesIO()
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+            fh.seek(0)
+            
+            file_name = file['name']
+            name_without_ext = re.sub(r'\.[a-zA-Z0-9]+$', '', file_name)
+            match_texto = re.search(r'_(.+)$', name_without_ext)
+            
+            if match_texto:
+                caption = f"Esquema {index+1}: {match_texto.group(1).strip()}"
+            else:
+                caption = f"Esquema {index+1}: Ubicación de hallazgos y sectores afectados"
+                
+            esquemas.append((fh.read(), caption))
+
+        msg = f"✅ Se cargaron exitosamente {len(fotos)} fotografías y {len(esquemas)} esquemas desde Google Drive."
+        return fotos, esquemas, msg
+
+    except Exception as e:
+        return [], [], f"⚠️ Error al acceder a la carpeta de Google Drive: {str(e)}"
+
+
+# =========================================================
+# FUNCIONES AUXILIARES DE IMAGEN Y TEXTO
+# =========================================================
+
+@st.cache_data(ttl=3600)
+def obtener_bytes_imagen(url):
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            return response.content
+    except Exception:
+        pass
+    return None
+
+
+def obtener_numero_archivo(nombre_archivo):
+    match = re.search(r'^(\d+)', nombre_archivo)
+    return int(match.group(1)) if match else 9999
+
+
+# =========================================================
+# LECTURA / ESCRITURA EN HISTORIAL
+# =========================================================
+
+@st.cache_data(ttl=300)
+def cargar_base_equipos():
+    try:
+        client = conectar_google_sheets()
+        ws = client.worksheet("BASE EQUIPOS")
+        filas = ws.get_all_values()
+
+        if len(filas) <= 1:
+            return pd.DataFrame(columns=["UNIDAD", "TAG", "DESCRIPCION", "ACA"])
+
+        datos = []
+        for f in filas[1:]:
+            unidad = f[2].strip() if len(f) > 2 else ""
+            tag = f[3].strip() if len(f) > 3 else ""
+            descripcion = f[4].strip() if len(f) > 4 else ""
+            aca_val = f[7].strip() if len(f) > 7 else ""
+
+            if tag:
+                datos.append({
+                    "UNIDAD": unidad,
+                    "TAG": tag,
+                    "DESCRIPCION": descripcion,
+                    "ACA": aca_val
+                })
+
+        return pd.DataFrame(datos)
+    except Exception:
+        return pd.DataFrame(columns=["UNIDAD", "TAG", "DESCRIPCION", "ACA"])
+
+
+def obtener_o_crear_hoja_historial():
+    client = conectar_google_sheets()
+    try:
+        ws = client.worksheet("HISTORIAL_INFORMES")
+    except gspread.exceptions.WorksheetNotFound:
+        ws = client.add_worksheet(title="HISTORIAL_INFORMES", rows="1000", cols="20")
+        ws.append_row([
+            "num_informe", "ot", "fecha", "unidad", "tag",
+            "descripcion", "aca", "motivo", "alcance",
+            "secciones_json", "inspector", "drive_link"
+        ])
+    return ws
+
+
+def guardar_resguardo_informe(datos_encabezado, secciones_dinamicas, drive_link, inspector_firma, fotos, esquemas):
+    try:
+        ws = obtener_o_crear_hoja_historial()
+        num_inf = datos_encabezado["num_informe"].strip()
+
+        if not num_inf:
+            return False, "Debe ingresar un N.º DE INFORME para poder resguardar."
+
+        filas = ws.get_all_values()
+        secciones_serializables = {str(k): v for k, v in secciones_dinamicas.items()}
+        secciones_serializables["_media"] = {"fotos": manifiesto_imagenes(fotos), "esquemas": manifiesto_imagenes(esquemas)}
+        secciones_json = json.dumps(secciones_serializables, ensure_ascii=False)
+
+        fila_nueva = [
+            num_inf,
+            str(datos_encabezado["ot"]),
+            datos_encabezado["fecha"].strftime("%Y-%m-%d"),
+            str(datos_encabezado["unidad"]),
+            str(datos_encabezado["tag"]),
+            str(datos_encabezado["descripcion"]),
+            str(datos_encabezado["aca"]),
+            str(datos_encabezado["motivo"]),
+            str(datos_encabezado["alcance"]),
+            secciones_json,
+            str(inspector_firma),
+            str(drive_link)
+        ]
+
+        fila_idx = None
+        for idx, f in enumerate(filas[1:], start=2):
+            if len(f) > 0 and f[0].strip().upper() == num_inf.upper():
+                fila_idx = idx
+                break
+
+        if fila_idx:
+            ws.update(range_name=f"A{fila_idx}:L{fila_idx}", values=[fila_nueva], value_input_option="RAW")
+            mensaje = f"✅ Informe '{num_inf}' actualizado correctamente en Google Sheets."
+        else:
+            ws.append_row(fila_nueva, value_input_option="RAW")
+            mensaje = f"✅ Informe '{num_inf}' resguardado exitosamente en Google Sheets."
+
+        st.cache_data.clear()
+        return True, mensaje
+
+    except Exception as e:
+        return False, f"Error al guardar el informe: {e}"
+
+
+def obtener_lista_informes_guardados():
+    try:
+        ws = obtener_o_crear_hoja_historial()
+        filas = ws.get_all_values()
+        if len(filas) <= 1:
+            return []
+        return [f[0].strip() for f in filas[1:] if len(f) > 0 and f[0].strip()]
+    except Exception:
+        return []
+
+
+def cargar_datos_informe(num_informe_sel):
+    try:
+        ws = obtener_o_crear_hoja_historial()
+        filas = ws.get_all_values()
+        for f in filas[1:]:
+            if len(f) > 0 and f[0].strip().upper() == num_informe_sel.upper():
+                secciones_json = json.loads(f[9]) if len(f) > 9 and f[9] else {}
+                media = secciones_json.pop("_media", {})
+                secciones_dict = {int(k): v for k, v in secciones_json.items()}
+                drive_link = f[11] if len(f) > 11 else ""
+
+                imgs_recuperadas = []
+                esquemas_recuperados = []
+                if drive_link:
+                    imgs_recuperadas, esquemas_recuperados, _ = obtener_imagenes_desde_drive_folder(drive_link)
+
+                imgs_recuperadas = restaurar_imagenes(imgs_recuperadas, media.get("fotos"))
+                esquemas_recuperados = restaurar_imagenes(esquemas_recuperados, media.get("esquemas"))
+                return {
+                    "num_informe": f[0],
+                    "ot": f[1] if len(f) > 1 else "",
+                    "fecha": datetime.strptime(f[2], "%Y-%m-%d").date() if len(f) > 2 and f[2] else date.today(),
+                    "unidad": f[3] if len(f) > 3 else "",
+                    "tag": f[4] if len(f) > 4 else "",
+                    "descripcion": f[5] if len(f) > 5 else "",
+                    "aca": f[6] if len(f) > 6 else "",
+                    "motivo": f[7] if len(f) > 7 else "",
+                    "alcance": f[8] if len(f) > 8 else "",
+                    "secciones_dinamicas": secciones_dict,
+                    "inspector": f[10] if len(f) > 10 else "",
+                    "drive_link": drive_link,
+                    "imagenes_procesadas": imgs_recuperadas,
+                    "esquemas_procesados": esquemas_recuperados
+                }
+    except Exception as e:
+        st.error(f"Error al cargar el informe: {e}")
+    return None
+
+
+def eliminar_informe_guardado(num_informe_sel):
+    try:
+        ws = obtener_o_crear_hoja_historial()
+        filas = ws.get_all_values()
+        
+        for idx, f in enumerate(filas[1:], start=2):
+            if len(f) > 0 and f[0].strip().upper() == num_informe_sel.strip().upper():
+                ws.delete_rows(idx)
+                st.cache_data.clear()
+                return True, f"🗑️ El informe '{num_informe_sel}' fue eliminado con éxito de Google Sheets."
+                
+        return False, "No se encontró el informe especificado para eliminar."
+    except Exception as e:
+        return False, f"Error al intentar eliminar el informe: {e}"
+
+
+# =========================================================
+# GENERACIÓN DE PDF Y WORD
+# =========================================================
+
+def dibujar_plantilla_pdf(canvas, doc):
+    canvas.saveState()
+    canvas.setFillColor(colors.HexColor("#f8faf6"))
+    canvas.rect(0, 0, letter[0], letter[1], fill=1, stroke=0)
+
+    logo_bytes = obtener_bytes_imagen(URL_LOGO_GITHUB)
+    if logo_bytes:
+        try:
+            img_stream = BytesIO(logo_bytes)
+            img = ImageReader(img_stream)
+            width_logo = 120
+            height_logo = 45
+            x_pos = letter[0] - width_logo - 30
+            y_pos = letter[1] - height_logo - 15
+            canvas.drawImage(img, x_pos, y_pos, width=width_logo, height=height_logo, preserveAspectRatio=True, mask='auto')
+        except Exception:
+            pass
+
+    canvas.setFont("Helvetica", 6)
+    canvas.setFillColor(colors.HexColor("#6B7280"))
+    canvas.drawCentredString(letter[0] / 2.0, 18, "SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.")
+    canvas.drawCentredString(letter[0] / 2.0, 10, "CONTRATO N° AC 31104857")
+    canvas.drawRightString(letter[0] - 30, 10, f"Pág. {canvas.getPageNumber()}")
+    canvas.restoreState()
+
+
+def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imagenes_procesadas, esquemas_procesados, inspector_firma):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=30,
+        leftMargin=30,
+        topMargin=1.5 * cm,
+        bottomMargin=1.2 * cm
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=15, leading=18, textColor=colors.HexColor('#1E3A8A'), alignment=1, spaceAfter=8)
+    sec_heading_style = ParagraphStyle('SecHeader', parent=styles['Heading2'], fontSize=11, leading=13, textColor=colors.HexColor('#1E3A8A'), fontName='Helvetica-Bold', spaceBefore=10, spaceAfter=4, keepWithNext=True)
+    subsec_heading_style = ParagraphStyle('SubSecHeader', parent=styles['Heading3'], fontSize=9.5, leading=11, textColor=colors.HexColor('#619b40'), fontName='Helvetica-Bold', spaceBefore=4, spaceAfter=2, keepWithNext=True)
+    text_style = ParagraphStyle('TextStyle', parent=styles['Normal'], fontSize=8.5, leading=11, textColor=colors.HexColor('#1F2937'), spaceAfter=6)
+    cell_body = ParagraphStyle('CB', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#1F2937'), spaceBefore=0, spaceAfter=0)
+    firma_style = ParagraphStyle('FirmaStyle', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.HexColor('#1E3A8A'), fontName='Helvetica-Bold', alignment=2)
+
+    story = [
+        Paragraph("INFORME DE INSPECCIÓN VISUAL", title_style),
+        Spacer(1, 4)
+    ]
+
+    data_enc = [
+        [Paragraph("<b>N.º DE INFORME:</b>", cell_body), Paragraph(str(datos_encabezado['num_informe']), cell_body), Paragraph("<b>OT:</b>", cell_body), Paragraph(str(datos_encabezado['ot']), cell_body)],
+        [Paragraph("<b>FECHA:</b>", cell_body), Paragraph(datos_encabezado['fecha'].strftime("%d/%m/%Y"), cell_body), Paragraph("<b>UNIDAD:</b>", cell_body), Paragraph(str(datos_encabezado['unidad']), cell_body)],
+        [Paragraph("<b>TAG:</b>", cell_body), Paragraph(str(datos_encabezado['tag']), cell_body), Paragraph("<b>DESCRIPCIÓN:</b>", cell_body), Paragraph(str(datos_encabezado['descripcion']), cell_body)],
+        [Paragraph("<b>ACA:</b>", cell_body), Paragraph(str(datos_encabezado['aca']), cell_body), Paragraph("<b>MOTIVO:</b>", cell_body), Paragraph(str(datos_encabezado['motivo']), cell_body)],
+    ]
+    t_enc = Table(data_enc, colWidths=[90, 186, 90, 186])
+    t_enc.setStyle(TableStyle([
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#D1D5DB')),
+        ('BACKGROUND', (0,0), (0,-1), colors.HexColor('#F3F4F6')),
+        ('BACKGROUND', (2,0), (2,-1), colors.HexColor('#F3F4F6')),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('PADDING', (0,0), (-1,-1), 4),
+    ]))
+    story.append(t_enc)
+
+    data_alcance = [[Paragraph("<b>ALCANCE:</b>", cell_body), Paragraph(str(datos_encabezado['alcance']), cell_body)]]
+    t_alcance = Table(data_alcance, colWidths=[90, 462])
+    t_alcance.setStyle(TableStyle([
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#D1D5DB')),
+        ('BACKGROUND', (0,0), (0,0), colors.HexColor('#F3F4F6')),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('PADDING', (0,0), (-1,-1), 4),
+    ]))
+    story.append(t_alcance)
+    story.append(Spacer(1, 10))
+
+    for sec_num, sec_info in secciones_dinamicas.items():
+        subpuntos = sec_info['subpuntos']
+        if subpuntos:
+            story.append(Paragraph(f"{sec_num}. {sec_info['titulo']}", sec_heading_style))
+            for idx, sub in enumerate(subpuntos, start=1):
+                num_sub = f"{sec_num}.{idx}"
+                titulo_sub = f"{num_sub} {sub['titulo']}" if sub['titulo'] else num_sub
+                story.append(Paragraph(titulo_sub, subsec_heading_style))
+                story.append(Paragraph(sub['contenido'] if sub['contenido'] else "-", text_style))
+
+    # 5. REGISTROS FOTOGRÁFICOS
+    story.append(PageBreak())
+    story.append(Paragraph("5. REGISTROS FOTOGRÁFICOS", sec_heading_style))
+    story.append(Spacer(1, 2))
+
+    if imagenes_procesadas:
+        for i in range(0, len(imagenes_procesadas), 2):
+            if i > 0 and i % 6 == 0:
+                story.append(PageBreak())
+                story.append(Paragraph("5. REGISTROS FOTOGRÁFICOS (Continuación)", sec_heading_style))
+                story.append(Spacer(1, 2))
+
+            row_cells = []
+            img_bytes1, label1 = imagenes_procesadas[i]
+            img_obj1 = RLImage(BytesIO(img_bytes1), width=9.33*cm, height=7.0*cm)
+            cell1 = [img_obj1, Paragraph(f"<font size=8><b>{label1}</b></font>", cell_body)]
+            row_cells.append(cell1)
+
+            if i + 1 < len(imagenes_procesadas):
+                img_bytes2, label2 = imagenes_procesadas[i+1]
+                img_obj2 = RLImage(BytesIO(img_bytes2), width=9.33*cm, height=7.0*cm)
+                cell2 = [img_obj2, Paragraph(f"<font size=8><b>{label2}</b></font>", cell_body)]
+                row_cells.append(cell2)
+            else:
+                row_cells.append("")
+
+            t_pair = Table([row_cells], colWidths=[276, 276])
+            t_pair.setStyle(TableStyle([
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                ('LEFTPADDING', (0,0), (-1,-1), 0),
+                ('RIGHTPADDING', (0,0), (-1,-1), 0),
+                ('TOPPADDING', (0,0), (-1,-1), 0),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+            ]))
+            story.append(t_pair)
+
+    # 6. ESQUEMA DE EQUIPO
+    if esquemas_procesados:
+        story.append(PageBreak())
+        story.append(Paragraph("6. ESQUEMA DE EQUIPO", sec_heading_style))
+        story.append(Spacer(1, 6))
+
+        for idx, (esq_bytes, label_esq) in enumerate(esquemas_procesados, start=1):
+            if idx > 1:
+                story.append(PageBreak())
+                story.append(Paragraph(f"6. ESQUEMA DE EQUIPO (Continuación - Esquema {idx})", sec_heading_style))
+                story.append(Spacer(1, 6))
+
+            img_esq = RLImage(BytesIO(esq_bytes), width=18.5*cm, height=13.5*cm)
+            t_esq = Table([[img_esq], [Paragraph(f"<b>{label_esq}</b>", cell_body)]], colWidths=[552])
+            t_esq.setStyle(TableStyle([
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('PADDING', (0,0), (-1,-1), 2),
+            ]))
+            story.append(t_esq)
+            story.append(Spacer(1, 10))
+
+    story.append(Spacer(1, 6))
+    if inspector_firma:
+        story.append(Paragraph(f"<b>Elaborado por:</b> {inspector_firma}", firma_style))
+
+    doc.build(story, onFirstPage=dibujar_plantilla_pdf, onLaterPages=dibujar_plantilla_pdf)
+    buffer.seek(0)
+    return buffer
+
+
+def generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imagenes_procesadas, esquemas_procesados, inspector_firma):
+    doc = Document()
+    
+    # Configuración de fuente base por defecto: Calibri 11pt
+    style_normal = doc.styles['Normal']
+    font_normal = style_normal.font
+    font_normal.name = 'Calibri'
+    font_normal.size = Pt(11)
+
+    # Márgenes de la página y posición del pie de página ajustados al límite inferior
+    section = doc.sections[0]
+    section.page_width = Inches(8.5)
+    section.page_height = Inches(11)
+    section.top_margin = Inches(0.7)
+    section.bottom_margin = Inches(0.3)
+    section.left_margin = Inches(0.8)
+    section.right_margin = Inches(0.8)
+    section.header_distance = Inches(0.1)
+    section.footer_distance = Inches(0.1)
+
+    # =========================================================
+    # ENCABEZADO WORD (LOGO ESQUINA SUPERIOR DERECHA)
+    # =========================================================
+    header = section.header
+    header_p = header.paragraphs[0]
+    header_p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    header_p.paragraph_format.space_before = Pt(0)
+    header_p.paragraph_format.space_after = Pt(0)
+    
+    logo_bytes = obtener_bytes_imagen(URL_LOGO_GITHUB)
+    if logo_bytes:
+        try:
+            header_p.add_run().add_picture(BytesIO(logo_bytes), width=Inches(1.8))
+        except Exception:
+            pass
+
+    # =========================================================
+    # PIE DE PÁGINA WORD (TAMAÑO 7 PT, CENTRADO Y MÁS ABAJO)
+    # =========================================================
+    footer = section.footer
+    footer_p = footer.paragraphs[0]
+    
+    ft_table = footer.add_table(rows=1, cols=2, width=Inches(6.8))
+    ft_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    
+    tblPr = ft_table._tbl.tblPr
+    borders = parse_xml(r'<w:tblBorders %s><w:top w:val="none"/><w:left w:val="none"/><w:bottom w:val="none"/><w:right w:val="none"/><w:insideH w:val="none"/><w:insideV w:val="none"/></w:tblBorders>' % nsdecls('w'))
+    tblPr.append(borders)
+
+    cell_left = ft_table.rows[0].cells[0]
+    cell_right = ft_table.rows[0].cells[1]
+    cell_left.width = Inches(5.3)
+    cell_right.width = Inches(1.5)
+
+    p_left = cell_left.paragraphs[0]
+    p_left.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_left.paragraph_format.space_before = Pt(0)
+    p_left.paragraph_format.space_after = Pt(0)
+    
+    run_ft_1 = p_left.add_run("SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS DE ENAP REFINERÍAS S.A.\n")
+    run_ft_1.font.name = "Calibri"
+    run_ft_1.font.size = Pt(7)
+    run_ft_1.font.color.rgb = RGBColor(107, 114, 128)
+
+    run_ft_2 = p_left.add_run("CONTRATO N° AC 31104857")
+    run_ft_2.font.name = "Calibri"
+    run_ft_2.font.size = Pt(7)
+    run_ft_2.font.color.rgb = RGBColor(107, 114, 128)
+
+    p_right = cell_right.paragraphs[0]
+    p_right.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p_right.paragraph_format.space_before = Pt(0)
+    p_right.paragraph_format.space_after = Pt(0)
+    
+    run_ft_3 = p_right.add_run("Pág. ")
+    run_ft_3.font.name = "Calibri"
+    run_ft_3.font.size = Pt(7)
+    run_ft_3.font.color.rgb = RGBColor(107, 114, 128)
+    agregar_numero_pagina_word(run_ft_3)
+
+    footer._element.remove(footer_p._element)
+
+    # =========================================================
+    # CUERPO DEL INFORME WORD
+    # =========================================================
+    p_title = doc.add_paragraph()
+    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_title.paragraph_format.space_before = Pt(0)
+    p_title.paragraph_format.space_after = Pt(4)
+    run_title = p_title.add_run("INFORME DE INSPECCIÓN VISUAL")
+    run_title.font.name = "Calibri"
+    run_title.font.bold = True
+    run_title.font.size = Pt(15)
+    run_title.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
+
+    table = doc.add_table(rows=5, cols=4)
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.style = 'Table Grid'
+
+    fields = [
+        ("N.º DE INFORME:", datos_encabezado['num_informe'], "OT:", datos_encabezado['ot']),
+        ("FECHA:", datos_encabezado['fecha'].strftime("%d/%m/%Y"), "UNIDAD:", datos_encabezado['unidad']),
+        ("TAG:", datos_encabezado['tag'], "DESCRIPCIÓN:", datos_encabezado['descripcion']),
+        ("ACA:", datos_encabezado['aca'], "MOTIVO:", datos_encabezado['motivo']),
+    ]
+
+    for row_idx, (k1, v1, k2, v2) in enumerate(fields):
+        row = table.rows[row_idx]
+        set_cell_background(row.cells[0], "F3F4F6")
+        p = row.cells[0].paragraphs[0]
+        p.paragraph_format.space_before = Pt(1)
+        p.paragraph_format.space_after = Pt(1)
+        r = p.add_run(k1)
+        r.font.name = "Calibri"
+        r.font.bold = True
+        r.font.size = Pt(10)
+
+        p = row.cells[1].paragraphs[0]
+        p.paragraph_format.space_before = Pt(1)
+        p.paragraph_format.space_after = Pt(1)
+        r = p.add_run(str(v1))
+        r.font.name = "Calibri"
+        r.font.size = Pt(10)
+
+        set_cell_background(row.cells[2], "F3F4F6")
+        p = row.cells[2].paragraphs[0]
+        p.paragraph_format.space_before = Pt(1)
+        p.paragraph_format.space_after = Pt(1)
+        r = p.add_run(k2)
+        r.font.name = "Calibri"
+        r.font.bold = True
+        r.font.size = Pt(10)
+
+        p = row.cells[3].paragraphs[0]
+        p.paragraph_format.space_before = Pt(1)
+        p.paragraph_format.space_after = Pt(1)
+        r = p.add_run(str(v2))
+        r.font.name = "Calibri"
+        r.font.size = Pt(10)
+
+    row_alcance = table.rows[4]
+    set_cell_background(row_alcance.cells[0], "F3F4F6")
+    p0 = row_alcance.cells[0].paragraphs[0]
+    p0.paragraph_format.space_before = Pt(1)
+    p0.paragraph_format.space_after = Pt(1)
+    r0 = p0.add_run("ALCANCE:")
+    r0.font.name = "Calibri"
+    r0.font.bold = True
+    r0.font.size = Pt(10)
+
+    cell_span = row_alcance.cells[1]
+    cell_span.merge(row_alcance.cells[2])
+    cell_span.merge(row_alcance.cells[3])
+    p_alc = cell_span.paragraphs[0]
+    p_alc.paragraph_format.space_before = Pt(1)
+    p_alc.paragraph_format.space_after = Pt(1)
+    r_alc = p_alc.add_run(str(datos_encabezado['alcance']))
+    r_alc.font.name = "Calibri"
+    r_alc.font.size = Pt(10)
+
+    # Espacio compacto tras la tabla
+    p_spacer = doc.add_paragraph()
+    p_spacer.paragraph_format.space_before = Pt(2)
+    p_spacer.paragraph_format.space_after = Pt(2)
+
+    for sec_num, sec_info in secciones_dinamicas.items():
+        subpuntos = sec_info['subpuntos']
+        if subpuntos:
+            p_sec = doc.add_paragraph()
+            p_sec.paragraph_format.keep_with_next = True
+            p_sec.paragraph_format.space_before = Pt(6)
+            p_sec.paragraph_format.space_after = Pt(2)
+            r_sec = p_sec.add_run(f"{sec_num}. {sec_info['titulo']}")
+            r_sec.font.name = "Calibri"
+            r_sec.font.bold = True
+            r_sec.font.size = Pt(12)
+            r_sec.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
+
+            for idx, sub in enumerate(subpuntos, start=1):
+                num_sub = f"{sec_num}.{idx}"
+                titulo_sub = f"{num_sub} {sub['titulo']}" if sub['titulo'] else num_sub
+
+                p_subsec = doc.add_paragraph()
+                p_subsec.paragraph_format.keep_with_next = True
+                p_subsec.paragraph_format.space_before = Pt(3)
+                p_subsec.paragraph_format.space_after = Pt(1)
+                r_subsec = p_subsec.add_run(titulo_sub)
+                r_subsec.font.name = "Calibri"
+                r_subsec.font.bold = True
+                r_subsec.font.size = Pt(11)
+                r_subsec.font.color.rgb = RGBColor(0x61, 0x9B, 0x40)
+
+                p_cont = doc.add_paragraph()
+                p_cont.paragraph_format.space_before = Pt(1)
+                p_cont.paragraph_format.space_after = Pt(3)
+                r_cont = p_cont.add_run(sub['contenido'] if sub['contenido'] else "-")
+                r_cont.font.name = "Calibri"
+                r_cont.font.size = Pt(11)
+                r_cont.font.color.rgb = RGBColor(0x1F, 0x29, 0x37)
+
+    # 5. REGISTROS FOTOGRÁFICOS (3 FILAS X 2 COLUMNAS = 6 FOTOS POR PÁGINA)
+    doc.add_page_break()
+    p_sec5 = doc.add_paragraph()
+    p_sec5.paragraph_format.keep_with_next = True
+    p_sec5.paragraph_format.space_before = Pt(0)
+    p_sec5.paragraph_format.space_after = Pt(4)
+    r_sec5 = p_sec5.add_run("5. REGISTROS FOTOGRÁFICOS")
+    r_sec5.font.name = "Calibri"
+    r_sec5.font.bold = True
+    r_sec5.font.size = Pt(12)
+    r_sec5.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
+
+    if imagenes_procesadas:
+        total_fotos = len(imagenes_procesadas)
+        for i in range(0, total_fotos, 6):
+            if i > 0:
+                doc.add_page_break()
+                p_sec5_cont = doc.add_paragraph()
+                p_sec5_cont.paragraph_format.keep_with_next = True
+                p_sec5_cont.paragraph_format.space_before = Pt(0)
+                p_sec5_cont.paragraph_format.space_after = Pt(4)
+                r_sec5_cont = p_sec5_cont.add_run("5. REGISTROS FOTOGRÁFICOS (Continuación)")
+                r_sec5_cont.font.name = "Calibri"
+                r_sec5_cont.font.bold = True
+                r_sec5_cont.font.size = Pt(12)
+                r_sec5_cont.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
+
+            bloque_fotos = imagenes_procesadas[i:i+6]
+            img_table = doc.add_table(rows=0, cols=2)
+            img_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+            for j in range(0, len(bloque_fotos), 2):
+                fila_fotos = img_table.add_row()
+                fila_fotos._tr.get_or_add_trPr().append(OxmlElement("w:cantSplit"))
+                row_cells = fila_fotos.cells
+
+                # Foto 1
+                img_data1, label1 = bloque_fotos[j]
+                num_f1 = i + j + 1
+                
+                clean_label1 = re.sub(r'^Foto\s*\d+\s*:\s*', '', str(label1), flags=re.IGNORECASE).strip()
+                texto_foto1 = f"Foto {num_f1}: {clean_label1}" if clean_label1 else f"Foto {num_f1}"
+
+                p1 = row_cells[0].paragraphs[0]
+                p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p1.paragraph_format.space_before = Pt(0)
+                p1.paragraph_format.space_after = Pt(0)
+                insertar_imagen_word(p1, img_data1, 3.25, 2.45)
+
+                p1_sub = row_cells[0].add_paragraph()
+                p1_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p1_sub.paragraph_format.space_before = Pt(0)
+                p1_sub.paragraph_format.space_after = Pt(1)
+                p1_sub.paragraph_format.line_spacing = Pt(11)
+                r1_sub = p1_sub.add_run(texto_foto1)
+                r1_sub.font.name = "Calibri"
+                r1_sub.font.bold = True
+                r1_sub.font.size = Pt(11)
+
+                # Foto 2 (si existe en la fila)
+                if j + 1 < len(bloque_fotos):
+                    img_data2, label2 = bloque_fotos[j+1]
+                    num_f2 = i + j + 2
+
+                    clean_label2 = re.sub(r'^Foto\s*\d+\s*:\s*', '', str(label2), flags=re.IGNORECASE).strip()
+                    texto_foto2 = f"Foto {num_f2}: {clean_label2}" if clean_label2 else f"Foto {num_f2}"
+
+                    p2 = row_cells[1].paragraphs[0]
+                    p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    p2.paragraph_format.space_before = Pt(0)
+                    p2.paragraph_format.space_after = Pt(0)
+                    insertar_imagen_word(p2, img_data2, 3.25, 2.45)
+
+                    p2_sub = row_cells[1].add_paragraph()
+                    p2_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    p2_sub.paragraph_format.space_before = Pt(0)
+                    p2_sub.paragraph_format.space_after = Pt(1)
+                    p2_sub.paragraph_format.line_spacing = Pt(11)
+                    r2_sub = p2_sub.add_run(texto_foto2)
+                    r2_sub.font.name = "Calibri"
+                    r2_sub.font.bold = True
+                    r2_sub.font.size = Pt(11)
+
+    # 6. ESQUEMAS EN WORD
+    if esquemas_procesados:
+        doc.add_page_break()
+        p_sec6 = doc.add_paragraph()
+        p_sec6.paragraph_format.keep_with_next = True
+        p_sec6.paragraph_format.space_before = Pt(0)
+        p_sec6.paragraph_format.space_after = Pt(4)
+        r_sec6 = p_sec6.add_run("6. ESQUEMA DE EQUIPO")
+        r_sec6.font.name = "Calibri"
+        r_sec6.font.bold = True
+        r_sec6.font.size = Pt(12)
+        r_sec6.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
+
+        for idx, (esq_data, label_esq) in enumerate(esquemas_procesados, start=1):
+            if idx > 1:
+                doc.add_page_break()
+
+            p_esq = doc.add_paragraph()
+            p_esq.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p_esq.paragraph_format.space_before = Pt(0)
+            p_esq.paragraph_format.space_after = Pt(2)
+            insertar_imagen_word(p_esq, esq_data, 6.7, 8.0)
+
+            p_esq_sub = doc.add_paragraph()
+            p_esq_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p_esq_sub.paragraph_format.space_before = Pt(0)
+            p_esq_sub.paragraph_format.space_after = Pt(4)
+            r_esq_sub = p_esq_sub.add_run(str(label_esq))
+            r_esq_sub.font.name = "Calibri"
+            r_esq_sub.font.bold = True
+            r_esq_sub.font.size = Pt(11)
+
+    if inspector_firma:
+        p_firma = doc.add_paragraph()
+        p_firma.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        p_firma.paragraph_format.space_before = Pt(6)
+        p_firma.paragraph_format.space_after = Pt(0)
+        p_run = p_firma.add_run(f"\nElaborado por: {inspector_firma}")
+        p_run.font.name = "Calibri"
+        p_run.font.bold = True
+        p_run.font.size = Pt(11)
+        p_run.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
+
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+
+# =========================================================
+# INTERFAZ DE USUARIO STREAMLIT
+# =========================================================
+
+st.markdown("""<style>
+.block-container {max-width:1200px; padding-top:2.5rem; padding-bottom:1rem;}
+[data-testid="stVerticalBlock"] {gap:.65rem;}
+h1 {font-size:1.8rem !important; color:#17324d;}
+h3,h4 {color:#17324d;}
+</style>""", unsafe_allow_html=True)
+st.title("Informe de inspección visual")
+st.caption("QA/QC · El orden de las secciones corresponde al formato de informe requerido.")
+with st.expander("Nuevo informe", expanded=False):
+    descartar = st.checkbox("Descartar los cambios actuales y comenzar un informe vacío")
+    st.button("Crear nuevo informe", disabled=not descartar, on_click=limpiar_editor)
+
+
+df_equipos = cargar_base_equipos()
+
+if "imagenes_cargadas_resguardo" not in st.session_state:
+    st.session_state["imagenes_cargadas_resguardo"] = []
+if "esquemas_cargados_resguardo" not in st.session_state:
+    st.session_state["esquemas_cargados_resguardo"] = []
+
+# CARGAR O ELIMINAR INFORMES PREVIAMENTE RESGUARDADOS
+st.markdown("### 📂 Cargar o Eliminar Informe Resguardado")
+lista_informes_guardados = ["-- Seleccionar informe resguardado --"] + obtener_lista_informes_guardados()
+informe_sel = st.selectbox("Buscar por N.° de Informe Guardado:", lista_informes_guardados, key="informe_guardado_selector")
+
+col_acc1, col_acc2 = st.columns([2, 1])
+
+with col_acc1:
+    btn_cargar = st.button("📂 Cargar Datos e Imágenes del Informe Seleccionado", use_container_width=True)
+
+with col_acc2:
+    confirmar_eliminar = st.checkbox("⚠️ Confirmar eliminación", key="chk_eliminar")
+    btn_eliminar = st.button("🗑️ Eliminar Informe", type="primary", use_container_width=True)
+
+# LÓGICA DE CARGA
+if btn_cargar:
+    if informe_sel and informe_sel != "-- Seleccionar informe resguardado --":
+        datos_cargados = cargar_datos_informe(informe_sel)
+        if datos_cargados:
+            limpiar_leyendas()
+            st.session_state["buscar_equipo"] = "-- Seleccionar de BASE EQUIPOS --"
+            st.session_state.pop("exportacion_visual", None)
+            st.session_state["carpeta_imagenes_actual"] = datos_cargados["drive_link"]
+            st.session_state['num_informe'] = datos_cargados['num_informe']
+            st.session_state['ot'] = datos_cargados['ot']
+            st.session_state['fecha'] = datos_cargados['fecha']
+            st.session_state['unidad'] = datos_cargados['unidad']
+            st.session_state['unidad_selector'] = datos_cargados['unidad'] if datos_cargados['unidad'] in LISTA_PLANTAS else ""
+            st.session_state['unidad_manual'] = "" if datos_cargados['unidad'] in LISTA_PLANTAS else datos_cargados['unidad']
+            st.session_state['tag'] = datos_cargados['tag']
+            st.session_state['descripcion'] = datos_cargados['descripcion']
+            st.session_state['aca'] = datos_cargados['aca']
+            st.session_state['motivo'] = datos_cargados['motivo']
+            st.session_state['alcance'] = datos_cargados['alcance']
+            st.session_state['inspector_firma'] = datos_cargados['inspector']
+            st.session_state['drive_link'] = datos_cargados['drive_link']
+
+            sec_loaded = datos_cargados['secciones_dinamicas']
+            for s_num in [1, 2, 3, 4]:
+                sub_list = sec_loaded.get(s_num, {}).get('subpuntos', [])
+                st.session_state[f"cant_subpuntos_sec_{s_num}"] = len(sub_list)
+                for idx, sub in enumerate(sub_list, start=1):
+                    st.session_state[f"tit_{s_num}_{idx}"] = sub.get("titulo", "")
+                    st.session_state[f"cont_{s_num}_{idx}"] = sub.get("contenido", "")
+
+            st.session_state["imagenes_cargadas_resguardo"] = datos_cargados["imagenes_procesadas"]
+            st.session_state["esquemas_cargados_resguardo"] = datos_cargados["esquemas_procesados"]
+            st.success(f"¡Informe '{informe_sel}' cargado correctamente!")
+            st.rerun()
+    else:
+        st.warning("Selecciona un informe válido para cargar.")
+
+# LÓGICA DE ELIMINACIÓN
+if btn_eliminar:
+    if not informe_sel or informe_sel == "-- Seleccionar informe resguardado --":
+        st.warning("Por favor selecciona un informe de la lista antes de intentar eliminar.")
+    elif not confirmar_eliminar:
+        st.error("Por seguridad, debes marcar la casilla '⚠️ Confirmar eliminación' antes de eliminar.")
+    else:
+        with st.spinner("Eliminando informe de Google Sheets..."):
+            exito, msg = eliminar_informe_guardado(informe_sel)
+            if exito:
+                st.success(msg)
+                st.rerun()
+            else:
+                st.error(msg)
+
+st.markdown("---")
+
+# 1. ENCABEZADO E IDENTIFICACIÓN
+st.markdown("#### 1. Encabezado e Identificación")
+
+col_search1, col_search2 = st.columns([2, 1])
+
+with col_search1:
+    lista_tags = ["-- Seleccionar de BASE EQUIPOS --"] + df_equipos["TAG"].tolist() if not df_equipos.empty else ["-- Sin datos --"]
+    tag_seleccionado = st.selectbox("🔍 Buscar TAG en BASE EQUIPOS:", lista_tags, key="buscar_equipo")
+    aplicar_equipo = st.button("Aplicar equipo seleccionado")
+
+if aplicar_equipo and tag_seleccionado and tag_seleccionado != "-- Seleccionar de BASE EQUIPOS --" and not df_equipos.empty:
+    equipo_info = df_equipos[df_equipos["TAG"] == tag_seleccionado].iloc[0]
+    st.session_state['unidad'] = equipo_info["UNIDAD"]
+    st.session_state['unidad_selector'] = equipo_info["UNIDAD"] if equipo_info["UNIDAD"] in LISTA_PLANTAS else ""
+    st.session_state['unidad_manual'] = "" if equipo_info["UNIDAD"] in LISTA_PLANTAS else equipo_info["UNIDAD"]
+    st.session_state['descripcion'] = equipo_info["DESCRIPCIÓN"] if "DESCRIPCIÓN" in equipo_info else equipo_info["DESCRIPCION"]
+    st.session_state['aca'] = equipo_info["ACA"]
+    st.session_state['tag'] = tag_seleccionado
+
+col1, col2 = st.columns(2)
+
+with col1:
+    num_informe = st.text_input("N.º DE INFORME", key='num_informe', placeholder="Ej: IV-2026-001")
+    fecha = st.date_input("FECHA", key='fecha', value=date.today())
+    tag = st.text_input("TAG", key='tag', placeholder="Ej: C-1302")
+    aca = st.text_input("ACA", key='aca', placeholder="Ej: ACA-2026")
+
+with col2:
+    ot = st.text_input("OT", key='ot', placeholder="Ej: 45001234")
+    col_u1, col_u2 = st.columns([2, 1])
+    val_u = st.session_state.get('unidad', '')
+    idx_u = LISTA_PLANTAS.index(val_u) + 1 if val_u in LISTA_PLANTAS else 0
+    with col_u1:
+        unidad_select = st.selectbox("UNIDAD / PLANTA (Seleccionar):", [""] + LISTA_PLANTAS, index=idx_u, key="unidad_selector")
+    with col_u2:
+        unidad_manual = st.text_input("O escribir Unidad:", value=val_u if idx_u == 0 else "", placeholder="Manual", key="unidad_manual")
+
+    unidad_final = unidad_manual.strip() if unidad_manual.strip() else unidad_select
+    descripcion = st.text_input("DESCRIPCIÓN", key='descripcion', placeholder="Ej: Columna de Fraccionamiento")
+    motivo = st.text_input("MOTIVO", key='motivo', placeholder="Ej: Inspección Programada")
+
+alcance = st.text_area("ALCANCE", key='alcance', height=70, placeholder="Describa el alcance de la inspección...")
+
+# SECCIONES TÉCNICAS DINÁMICAS
+st.markdown("---")
+st.markdown("#### Desarrollo de Secciones Técnicas (Subíndices Opcionales)")
+
+secciones_base = {
+    1: "ANTECEDENTES",
+    2: "CONCLUSIONES",
+    3: "RESULTADOS DE LA INSPECCIÓN",
+    4: "RECOMENDACIONES"
+}
+
+secciones_dinamicas = {}
+
+for num_sec, tit_sec in secciones_base.items():
+    with st.expander(f"📌 {num_sec}. {tit_sec}", expanded=(num_sec == 1)):
+        key_count = f"cant_subpuntos_sec_{num_sec}"
+        if key_count not in st.session_state:
+            st.session_state[key_count] = 0
+
+        col_b1, col_b2, col_b3 = st.columns([1, 1, 3])
+        with col_b1:
+            if st.button(f"➕ Agregar subpunto {num_sec}.x", key=f"btn_add_{num_sec}"):
+                st.session_state[key_count] += 1
+                st.rerun()
+        with col_b2:
+            if st.session_state[key_count] > 0:
+                if st.button(f"➖ Quitar último", key=f"btn_rem_{num_sec}"):
+                    st.session_state[key_count] -= 1
+                    st.rerun()
+
+        subpuntos_list = []
+        cant = st.session_state[key_count]
+
+        if cant == 0:
+            st.caption("ℹ️ *Sin subpuntos.*")
+
+        for i in range(1, cant + 1):
+            sub_num_str = f"{num_sec}.{i}"
+            c_t, c_c = st.columns([1.5, 3])
+            with c_t:
+                tit_sub = st.text_input(f"Título ({sub_num_str}):", placeholder="Ej: Antecedentes generales", key=f"tit_{num_sec}_{i}")
+            with c_c:
+                cont_sub = st.text_area(f"Contenido ({sub_num_str}):", placeholder="Detalle...", height=70, key=f"cont_{num_sec}_{i}")
+
+            subpuntos_list.append({"titulo": tit_sub, "contenido": cont_sub})
+
+        secciones_dinamicas[num_sec] = {
+            "titulo": tit_sec,
+            "subpuntos": subpuntos_list
+        }
+
+# REGISTROS FOTOGRÁFICOS Y ESQUEMAS
+st.markdown("---")
+st.markdown("#### 5. Registros Fotográficos y 6. Esquemas")
+
+imagenes_procesadas = []
+esquemas_procesados = []
+
+drive_folder_input = st.text_input(
+    "Pegar URL o ID de Carpeta en Google Drive con las fotos y esquemas:", 
+    key="drive_link",
+    placeholder="Ej: https://drive.google.com/drive/folders/1RPXZ8oUmM2eC1U6p3u3FlepKg6hvRLQC"
+)
+
+if st.button("📥 CARGAR ARCHIVOS DESDE GOOGLE DRIVE", use_container_width=True):
+    if drive_folder_input:
+        with st.spinner("Descargando fotografías y esquemas desde Google Drive..."):
+            imgs_drive, esq_drive, msg_drive = obtener_imagenes_desde_drive_folder(drive_folder_input)
+            if imgs_drive or esq_drive:
+                limpiar_leyendas()
+                st.session_state["carpeta_imagenes_actual"] = drive_folder_input
+                st.session_state["imagenes_cargadas_resguardo"] = imgs_drive
+                st.session_state["esquemas_cargados_resguardo"] = esq_drive
+                st.success(msg_drive)
+                st.rerun()
+            else:
+                st.error(msg_drive)
+
+# Despliegue de Fotografías Normales
+if st.session_state.get("imagenes_cargadas_resguardo"):
+    st.markdown("##### 📸 5. Registros Fotográficos")
+    imgs_res = st.session_state["imagenes_cargadas_resguardo"]
+    
+    cols = st.columns(3)
+    for index, (img_bytes, pie_orig) in enumerate(imgs_res):
+        with cols[index % 3]:
+            st.image(img_bytes, caption=f"Foto {index+1}", use_container_width=True)
+            pie_foto = st.text_input(f"Pie de foto {index+1}:", value=pie_orig, key=f"img_resguardada_{index}")
+            imagenes_procesadas.append((img_bytes, pie_foto))
+
+# Despliegue de Esquemas a Tamaño Completo
+if st.session_state.get("esquemas_cargados_resguardo"):
+    st.markdown("---")
+    st.markdown("##### 📐 6. Esquema de Equipo")
+    esq_res = st.session_state["esquemas_cargados_resguardo"]
+    
+    for index, (esq_bytes, pie_esq_orig) in enumerate(esq_res):
+        st.image(esq_bytes, caption=f"Esquema {index+1}", use_container_width=True)
+        pie_esq = st.text_input(f"Leyenda / Nombre ({index+1}):", value=pie_esq_orig, key=f"esq_resguardado_{index}")
+        esquemas_procesados.append((esq_bytes, pie_esq))
+
+# RESPONSABLE DEL INFORME
+st.markdown("---")
+st.markdown("#### Responsable del Informe")
+val_insp = st.session_state.get('inspector_firma', '')
+idx_insp = LISTA_INSPECTORES.index(val_insp) + 1 if val_insp in LISTA_INSPECTORES else 0
+inspector_firma = st.selectbox("👷‍♂️ Elaborado por:", [""] + LISTA_INSPECTORES, index=idx_insp, key='inspector_firma')
+
+datos_encabezado = {
+    'num_informe': num_informe,
+    'ot': ot,
+    'fecha': fecha,
+    'unidad': unidad_final,
+    'tag': tag,
+    'descripcion': descripcion,
+    'aca': aca,
+    'motivo': motivo,
+    'alcance': alcance
+}
+
+# RESGUARDO Y DESCARGAS
+st.markdown("---")
+st.markdown("#### 💾 Resguardo del Informe")
+
+carpeta_coherente = not (imagenes_procesadas or esquemas_procesados) or drive_folder_input == st.session_state.get("carpeta_imagenes_actual")
+if not carpeta_coherente:
+    st.warning("Cambiaste la carpeta de Drive. Carga sus imágenes antes de guardar o exportar.")
+if st.button("💾 RESGUARDAR INFORME EN GOOGLE SHEETS", type="primary", use_container_width=True, disabled=not carpeta_coherente):
+    with st.spinner("Guardando resguardo del informe en Google Sheets..."):
+        exito, msg = guardar_resguardo_informe(datos_encabezado, secciones_dinamicas, drive_folder_input, inspector_firma, imagenes_procesadas, esquemas_procesados)
+        if exito:
+            st.success(msg)
+        else:
+            st.error(msg)
+
+st.markdown("---")
+st.markdown("#### Exportar Informe Final")
+
+contenido_actual = json.dumps({"datos": datos_encabezado, "secciones": secciones_dinamicas,
+    "fotos": manifiesto_imagenes(imagenes_procesadas), "esquemas": manifiesto_imagenes(esquemas_procesados),
+    "inspector": inspector_firma, "carpeta": drive_folder_input}, default=str, sort_keys=True, ensure_ascii=False)
+huella = hashlib.sha256(contenido_actual.encode("utf-8")).hexdigest()
+if st.button("Preparar PDF y Word", type="primary", disabled=not carpeta_coherente):
+    if not num_informe.strip() or not tag.strip() or not inspector_firma:
+        st.warning("Completa número de informe, TAG y responsable antes de exportar.")
+    else:
+        try:
+            with st.spinner("Preparando documentos..."):
+                pdf = generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imagenes_procesadas, esquemas_procesados, inspector_firma).getvalue()
+                word = generar_word_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imagenes_procesadas, esquemas_procesados, inspector_firma).getvalue()
+            st.session_state["exportacion_visual"] = {"huella": huella, "pdf": pdf, "word": word}
+        except Exception as exc:
+            st.error(f"No se pudieron preparar los documentos: {exc}")
+
+preparado = st.session_state.get("exportacion_visual")
+if preparado and preparado["huella"] == huella:
+    nombre = re.sub(r"[^A-Za-z0-9_-]", "_", num_informe)
+    col_p, col_w = st.columns(2)
+    col_p.download_button("Descargar PDF", preparado["pdf"], f"INFORME_VISUAL_{nombre}.pdf", "application/pdf", use_container_width=True)
+    col_w.download_button("Descargar Word", preparado["word"], f"INFORME_VISUAL_{nombre}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
+elif preparado:
+    st.info("Hay cambios posteriores a la preparación. Pulsa Preparar PDF y Word para actualizar las descargas.")
