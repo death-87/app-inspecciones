@@ -64,6 +64,18 @@ def limpiar_editor():
             del st.session_state[clave]
     st.session_state["imagenes_cargadas_resguardo"] = []
     st.session_state["esquemas_cargados_resguardo"] = []
+    # Restablecer explícitamente los widgets: borrar sus claves puede permitir
+    # que Streamlit recupere el valor que conserva el navegador.
+    for clave in ("num_informe", "ot", "unidad", "tag", "descripcion", "aca", "motivo", "alcance", "inspector_firma", "drive_link", "unidad_selector", "unidad_manual"):
+        st.session_state[clave] = ""
+    st.session_state["fecha"] = date.today()
+    st.session_state["buscar_equipo"] = None
+    st.session_state["informe_guardado_selector"] = "-- Seleccionar informe resguardado --"
+    st.session_state["chk_eliminar"] = False
+    st.session_state["confirmar_nuevo_informe"] = False
+    for numero in (1, 2, 3, 4):
+        st.session_state[f"cant_subpuntos_sec_{numero}"] = 0
+    st.session_state["aviso_nuevo_informe"] = True
 
 
 def limpiar_leyendas():
@@ -986,8 +998,12 @@ h3,h4 {color:#17324d;}
 st.title("Informe de inspección visual")
 st.caption("QA/QC · El orden de las secciones corresponde al formato de informe requerido.")
 with st.expander("Nuevo informe", expanded=False):
-    descartar = st.checkbox("Descartar los cambios actuales y comenzar un informe vacío")
+    descartar = st.checkbox("Descartar los cambios actuales y comenzar un informe vacío", key="confirmar_nuevo_informe")
     st.button("Crear nuevo informe", disabled=not descartar, on_click=limpiar_editor)
+    st.caption("Marca la casilla para habilitar el botón. Después, completa el formulario que aparece debajo.")
+
+if st.session_state.pop("aviso_nuevo_informe", False):
+    st.success("Nuevo informe listo. Completa Encabezado e Identificación más abajo. Los informes guardados siguen disponibles.")
 
 
 df_equipos = cargar_base_equipos()
