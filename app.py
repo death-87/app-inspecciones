@@ -33,6 +33,31 @@ st.set_page_config(
     layout="wide"
 )
 
+# Estilo compacto. El tema de .streamlit/config.toml define los colores base.
+st.markdown("""
+<style>
+.block-container { max-width: 1240px; padding-top: 2.5rem; padding-bottom: 1rem; }
+[data-testid="stSidebar"] { background: #edf2f6; border-right: 1px solid #dbe3eb; }
+[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: .65rem; }
+[data-testid="stVerticalBlock"] { gap: .75rem; }
+[data-testid="stForm"] { background: #ffffff; border: 1px solid #dbe3eb; border-radius: 12px; padding: 1rem; }
+h1, h2, h3 { color: #17324d; letter-spacing: -.025em; }
+h3 { font-size: 1.2rem !important; padding-top: .2rem !important; }
+.app-heading { border-left: 4px solid #087f73; padding: .1rem 0 .1rem 1rem; margin-bottom: .6rem; }
+.app-heading h1 { font-size: 1.8rem; line-height: 1.2; margin: 0; padding: 0; }
+.app-heading p { color: #526579; font-size: .9rem; margin: .35rem 0 0; }
+.app-eyebrow { color: #087f73; font-size: .72rem; font-weight: 700; letter-spacing: .14em; margin-bottom: .35rem; }
+.app-footer { border-top: 1px solid #dbe3eb; padding-top: .65rem; margin-top: 1rem; color: #526579; font-size: .75rem; }
+[data-testid="stButton"] button, [data-testid="stFormSubmitButton"] button { border-radius: 8px; }
+@media (max-width: 640px) {
+    .block-container { padding: 2rem 1rem 1rem; }
+    .app-heading h1 { font-size: 1.45rem; }
+    [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
+    [data-testid="stColumn"] { min-width: 100% !important; flex: 1 1 100% !important; }
+}
+</style>
+""", unsafe_allow_html=True)
+
 # 🔗 URLs RAW DE LOGO, FRANJA Y PERSONAJE EN GITHUB
 URL_LOGO_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/logo.png"
 URL_FRANJA_GITHUB = "https://raw.githubusercontent.com/death-87/app-inspecciones/main/franja.png"
@@ -281,7 +306,7 @@ idx_semana_defecto = max(0, min(semana_actual_num - 1, len(LISTA_SEMANAS) - 1))
 # =========================================================
 logo_bytes_sidebar = obtener_bytes_logo()
 if logo_bytes_sidebar:
-    st.sidebar.image(logo_bytes_sidebar, use_container_width=True)
+    st.sidebar.image(logo_bytes_sidebar, width=145)
 
 # Invalidar también sesiones anteriores de cuentas que ya no tienen acceso.
 if st.session_state.usuario_actual not in USUARIOS_SISTEMA:
@@ -290,12 +315,12 @@ if st.session_state.usuario_actual not in USUARIOS_SISTEMA:
     st.session_state.rol_actual = "invitado"
     st.session_state.nombre_usuario = "Visitante"
 
-st.sidebar.markdown("### 🔐 Control de Acceso Interno")
+st.sidebar.markdown("### Acceso privado")
 if not st.session_state.autenticado:
     with st.sidebar.form("form_login"):
         user_input = st.text_input("Usuario:")
         pass_input = st.text_input("Contraseña:", type="password")
-        btn_login = st.form_submit_button("🔑 Iniciar Sesión")
+        btn_login = st.form_submit_button("Iniciar sesión", type="primary", use_container_width=True)
         if btn_login:
             if user_input in USUARIOS_SISTEMA and USUARIOS_SISTEMA[user_input]["password"] == pass_input:
                 st.session_state.autenticado = True
@@ -307,8 +332,8 @@ if not st.session_state.autenticado:
                 st.sidebar.error("❌ Usuario o contraseña incorrectos")
     st.sidebar.info("ℹ️ Inicia sesión con tu cuenta para acceder a la aplicación.")
 else:
-    st.sidebar.success(f"👤 Conectado:\n**{st.session_state.nombre_usuario}**")
-    if st.sidebar.button("🚪 Cerrar Sesión Interna"):
+    st.sidebar.caption(f"Sesión activa · {st.session_state.usuario_actual}")
+    if st.sidebar.button("Cerrar sesión", use_container_width=True):
         st.session_state.autenticado = False
         st.session_state.usuario_actual = None
         st.session_state.rol_actual = "invitado"
@@ -325,60 +350,41 @@ st.sidebar.markdown("---")
 # =========================================================
 # ENCABEZADO PRINCIPAL
 # =========================================================
-st.markdown("<h1 style='color: #619b40; margin-bottom: 0px;'>Sistema de Gestión de Activos Físicos - QA/QC</h1>", unsafe_allow_html=True)
-st.markdown("<h4 style='color: #F97316; margin-top: 5px;'><i>Control Operativo de Inspectores e Histórico de Informes</i></h4>", unsafe_allow_html=True)
-
-franja_bytes = obtener_bytes_franja()
-if franja_bytes:
-    st.image(franja_bytes, use_container_width=True)
+st.markdown("""
+<div class="app-heading">
+    <div class="app-eyebrow">CONTROL OPERATIVO · QA/QC</div>
+    <h1>Gestión de activos físicos</h1>
+    <p>Inspecciones, historial y planificación de operaciones.</p>
+</div>
+""", unsafe_allow_html=True)
 
 # =========================================================
 # MENÚ NAVEGACIÓN PRINCIPAL
 # =========================================================
 menu = st.sidebar.radio(
-    "📌 Selecciona una Opción:",
+    "Navegación",
     [
-        "📝 Registrar Actividad por Inspector", 
-        "📊 Historial e Informes", 
-        "📈 Reporte Planificación"
+        "Registrar actividad", 
+        "Historial e informes", 
+        "Planificación"
     ]
 )
 
-personaje_bytes = obtener_bytes_personaje()
-if personaje_bytes:
-    b64_img = base64.b64encode(personaje_bytes).decode("utf-8")
-    st.sidebar.markdown(
-        f"""
-        <style>
-            .personaje-flotante {{
-                margin-top: 2cm;
-                margin-left: 0.8cm;
-                width: 150px;
-                display: block;
-            }}
-        </style>
-        <img src="data:image/png;base64,{b64_img}" class="personaje-flotante" />
-        """,
-        unsafe_allow_html=True
-    )
+st.sidebar.caption("Gestión de inspecciones · ENAP")
 
 rol_usuario = st.session_state.rol_actual
 
 # =========================================================
 # MÓDULO 1: REGISTRO DE ACTIVIDADES
 # =========================================================
-if menu == "📝 Registrar Actividad por Inspector":
-    st.subheader("📋 Formulario de Ingreso de Actividades")
+if menu == "Registrar actividad":
+    st.subheader("Registrar actividad")
     if rol_usuario == "invitado":
         st.warning("⚠️ Tu cuenta actual es de **Visitante (Solo Lectura)**. Inicia sesión en la barra lateral para registrar actividades.")
 
-    st.markdown("##### 🔄 CONTINUAR UNA ACTIVIDAD PENDIENTE")
-    col_retoma1, col_retoma2 = st.columns([3, 1])
-    with col_retoma1:
-        tag_para_retomar = st.text_input("Buscar TAG para continuar trabajo pendiente:", placeholder="Ej: C-1302")
-    with col_retoma2:
-        st.markdown("<br/>", unsafe_allow_html=True)
-        btn_cargar_tag = st.button("🔎 Cargar Datos Últimos")
+    with st.expander("Retomar una actividad por TAG", expanded=False):
+        tag_para_retomar = st.text_input("TAG del equipo", placeholder="Ej: C-1302")
+        btn_cargar_tag = st.button("Cargar último registro")
 
     def_inspector = LISTA_INSPECTORES[0]
     def_planta = LISTA_PLANTAS[0]
@@ -403,26 +409,31 @@ if menu == "📝 Registrar Actividad por Inspector":
             if ultimo_reg.get("planta") in LISTA_PLANTAS:
                 def_planta = ultimo_reg.get("planta")
 
-    st.markdown("---")
     with st.form("form_actividades_inspector", clear_on_submit=True):
-        col1, col2 = st.columns(2)
+        idx_insp = LISTA_INSPECTORES.index(def_inspector) if def_inspector in LISTA_INSPECTORES else 0
+        idx_plan = LISTA_PLANTAS.index(def_planta) if def_planta in LISTA_PLANTAS else 0
+        idx_est = ESTADOS_LIBERACION.index(def_estado) if def_estado in ESTADOS_LIBERACION else 0
+        col1, col2, col3 = st.columns([2, 1, 1])
         with col1:
-            idx_insp = LISTA_INSPECTORES.index(def_inspector) if def_inspector in LISTA_INSPECTORES else 0
-            idx_plan = LISTA_PLANTAS.index(def_planta) if def_planta in LISTA_PLANTAS else 0
-            inspector_seleccionado = st.selectbox("👷‍♂️ Seleccionar Inspector asignado:", LISTA_INSPECTORES, index=idx_insp)
-            fecha_actividad = st.date_input("📅 Fecha de Inspección:", datetime.now())
-            semana_seleccionada = st.selectbox("🗓️ Semana Operativa:", LISTA_SEMANAS, index=idx_semana_defecto)
-            planta_seleccionada = st.selectbox("🏭 Planta / Unidad:", LISTA_PLANTAS, index=idx_plan)
-
+            inspector_seleccionado = st.selectbox("Inspector asignado", LISTA_INSPECTORES, index=idx_insp)
         with col2:
-            tag_equipo = st.text_input("🏷️ TAG del Equipo / Línea Piping:", value=def_tag, placeholder="Ej: C-1302")
-            porcentaje_avance = st.slider("📊 Porcentaje de Avance Acumulado:", min_value=0, max_value=100, value=def_avance, step=5, format="%d%%")
-            idx_est = ESTADOS_LIBERACION.index(def_estado) if def_estado in ESTADOS_LIBERACION else 0
-            estado_liberacion = st.selectbox("📌 Estado de la Inspección:", ESTADOS_LIBERACION, index=idx_est)
-
-        actividad_realizada = st.text_area("🛠️ Actividades Realizadas:", value=def_actividad)
-        observaciones = st.text_area("💬 Observaciones Adicionales:", value=def_obs)
-        btn_guardar = st.form_submit_button("☁️ Guardar Nuevo Registro en Google Sheets")
+            fecha_actividad = st.date_input("Fecha de inspección", datetime.now())
+        with col3:
+            semana_seleccionada = st.selectbox("Semana operativa", LISTA_SEMANAS, index=idx_semana_defecto)
+        col4, col5, col6 = st.columns([1, 1, 2])
+        with col4:
+            planta_seleccionada = st.selectbox("Planta / unidad", LISTA_PLANTAS, index=idx_plan)
+        with col5:
+            tag_equipo = st.text_input("TAG del equipo", value=def_tag, placeholder="Ej: C-1302")
+        with col6:
+            estado_liberacion = st.selectbox("Estado de inspección", ESTADOS_LIBERACION, index=idx_est)
+        porcentaje_avance = st.slider("Avance acumulado", min_value=0, max_value=100, value=def_avance, step=5, format="%d%%")
+        col7, col8 = st.columns(2)
+        with col7:
+            actividad_realizada = st.text_area("Actividad realizada", value=def_actividad, height=100)
+        with col8:
+            observaciones = st.text_area("Observaciones", value=def_obs, height=100)
+        btn_guardar = st.form_submit_button("Guardar actividad", type="primary")
 
         if btn_guardar:
             if rol_usuario == "invitado":
@@ -450,11 +461,12 @@ if menu == "📝 Registrar Actividad por Inspector":
 # =========================================================
 # MÓDULO 2: HISTORIAL E INFORMES
 # =========================================================
-elif menu == "📊 Historial e Informes":
-    st.subheader("🔍 Consulta de Historial")
+elif menu == "Historial e informes":
+    st.subheader("Historial e informes")
     df_historial = cargar_datos_sheets()
     if not df_historial.empty:
-        st.dataframe(df_historial, use_container_width=True)
+        st.caption(f"{len(df_historial):,} registros disponibles")
+        st.dataframe(df_historial, use_container_width=True, hide_index=True)
         csv_data = df_historial.to_csv(index=False).encode('utf-8')
         st.download_button("📥 Descargar Tabla a CSV", csv_data, "historial.csv", "text/csv")
     else:
@@ -463,18 +475,14 @@ elif menu == "📊 Historial e Informes":
 # =========================================================
 # MÓDULO 3: REPORTE PLANIFICACIÓN
 # =========================================================
-elif menu == "📈 Reporte Planificación":
-    st.subheader("📅 Planificación de Operaciones")
+elif menu == "Planificación":
+    st.subheader("Planificación de operaciones")
     df_plan = cargar_datos_planificacion()
     if not df_plan.empty:
-        st.dataframe(df_plan, use_container_width=True)
+        st.caption(f"{len(df_plan):,} registros disponibles")
+        st.dataframe(df_plan, use_container_width=True, hide_index=True)
     else:
         st.info("ℹ️ Sin datos de planificación.")
 
 # PIE DE PÁGINA
-st.markdown("<br/><br/>", unsafe_allow_html=True)
-col_foot1, col_foot2, col_foot3 = st.columns([2, 1, 2])
-with col_foot2:
-    logo_footer_bytes = obtener_bytes_logo()
-    if logo_footer_bytes:
-        st.image(logo_footer_bytes, width=150)
+st.markdown('<div class="app-footer">QA/QC · Servicio de inspección y evaluación de activos físicos</div>', unsafe_allow_html=True)
