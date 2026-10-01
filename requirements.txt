@@ -6,4 +6,6 @@ reportlab
 python-docx
 google-auth
 requests
-
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
