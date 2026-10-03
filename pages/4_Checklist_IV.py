@@ -100,6 +100,29 @@ def inconsistencias(datos):
     return problemas
 
 
+def revisar_informe(datos):
+    errores = []
+    for campo in ('numero', 'equipo', 'inspector'):
+        if not datos['campos'][campo].strip():
+            errores.append({'seccion': 'Identificación', 'campo': campo,
+                            'mensaje': f'Completa {CAMPOS[campo]}.'})
+    for grupo, contenido in datos['grupos'].items():
+        for fila in contenido['filas']:
+            mensajes = []
+            if (fila['Respuesta'] == 'N/A') != (fila['Evaluación'] == 'N/A'):
+                mensajes.append('Marca N/A en ambas columnas o corrige la que no corresponde.')
+            if fila['Evaluación'] == 'NC' and not fila['Observaciones'].strip():
+                mensajes.append('Añade una observación que explique la no conformidad.')
+            for mensaje in mensajes:
+                errores.append({'seccion': grupo, 'campo': fila['Punto'],
+                                'mensaje': f'{fila["Punto"]}: {mensaje}'})
+    return errores
+
+
+TONOS_GRUPOS = [('#EFF6FF', '#35689B'), ('#EFF8F3', '#397353'),
+                 ('#FFF8EC', '#8C652B'), ('#F6F1FC', '#765092')]
+
+
 def punto_con_datos(fila):
     return (fila['Respuesta'] != 'Sin evaluar'
             or fila['Evaluación'] != 'Sin evaluar'
@@ -213,6 +236,7 @@ def main():
         st.session_state[key('datos')] = datos
         st.session_state[key('revision')] += 1
         st.session_state.pop(key('pdf'), None)
+        st.session_state[key('revision_activa')] = False
         st.rerun()
     datos = st.session_state[key('datos')]
     st.title('Informe visual tipo checklist')
@@ -232,12 +256,20 @@ def main():
                 st.error(f'No se pudo recuperar: {exc}')
             else:
                 cargar(recuperado)
+    if st.button('Revisar informe', key=widget('revisar')):
+        st.session_state[key('revision_activa')] = True
+    resumen_revision = st.empty()
+    st.caption('La revisión comprueba los datos obligatorios y la coherencia de las respuestas; no sustituye la evaluación técnica del inspector. Los puntos vacíos no se consideran errores.')
+    revision_activa = st.session_state.get(key('revision_activa'), False)
+    avisos_campos = {}
+    avisos_grupos = {}
     tabs = st.tabs(['Identificación', '1. Conclusiones / 2. Recomendaciones', '3. Checklist', '4. Fotografías', 'Exportar'])
     campos = datos['campos']
     with tabs[0]:
         columnas = st.columns(3)
         for n,(campo, etiqueta) in enumerate(CAMPOS.items()):
             campos[campo] = columnas[n%3].text_input(etiqueta, value=campos[campo], key=widget(campo))
+            avisos_campos[campo] = columnas[n%3].empty()
         st.caption('El código proviene del modelo adjunto: confírmalo según el equipo y alcance del informe.')
         a,b = st.columns(2)
         campos['fecha_inspeccion'] = a.date_input('Fecha de inspección', date.fromisoformat(campos['fecha_inspeccion']), key=widget('fecha_inspeccion')).isoformat()
@@ -249,13 +281,21 @@ def main():
     with tabs[2]:
         st.caption('Respuesta: Sí / No / N/A. Evaluación: C / NC / N/A. Sí no significa Conforme: describe la presencia del aspecto consultado. Nada se marca automáticamente.')
         for n,(grupo, contenido) in enumerate(datos['grupos'].items()):
-            with st.expander(grupo, expanded=True):
+            fondo, acento = TONOS_GRUPOS[n]
+            panel = key(f'grupo_color_{n}')
+            st.markdown(f'''<style>
+            .st-key-{panel} {{background:{fondo}; border-left:5px solid {acento}; border-radius:10px; padding:14px; margin-bottom:18px;}}
+            .st-key-{panel} h3 {{color:{acento} !important; font-size:1.1rem;}}
+            </style>''', unsafe_allow_html=True)
+            with st.container(key=panel):
+                st.subheader(grupo)
                 editado = st.data_editor(pd.DataFrame(contenido['filas']), hide_index=True, disabled=['Punto'], num_rows='fixed', use_container_width=True,
                     column_config={'Respuesta': st.column_config.SelectboxColumn(options=['Sin evaluar','Sí','No','N/A'], required=True),
                                    'Evaluación': st.column_config.SelectboxColumn(options=['Sin evaluar','C','NC','N/A'], required=True),
                                    'Observaciones': st.column_config.TextColumn(width='large')}, key=widget(f'editor_{n}'))
                 contenido['filas'] = editado.fillna('').to_dict('records')
                 contenido['observaciones'] = st.text_area('Observaciones del grupo', value=contenido['observaciones'], key=widget(f'obs_{n}'))
+                avisos_grupos[grupo] = st.empty()
     with tabs[3]:
         archivos = st.file_uploader('Fotografías JPG o PNG (máximo 20)', type=['jpg','jpeg','png'], accept_multiple_files=True, key=widget('fotos'))
         if st.button('Agregar fotografías', key=widget('agregar')):
@@ -296,11 +336,11 @@ def main():
         llenos = sum(punto_con_datos(r) for g in datos['grupos'].values() for r in g['filas'])
         st.caption(f'{llenos} de 28 puntos tienen datos. Solo puntos completados incluye cualquier punto con una respuesta, evaluación u observación. Los puntos vacíos se omiten; las observaciones de grupo se conservan.')
         if st.button('Preparar PDF', type='primary', key=widget('preparar')):
-            errores = inconsistencias(datos)
-            if not campos['numero'].strip() or not campos['equipo'].strip() or not campos['inspector'].strip():
-                st.error('Completa número de informe, equipo y nombre del inspector.')
-            elif errores:
-                st.error('\n\n'.join(errores))
+            errores = revisar_informe(datos)
+            st.session_state[key('revision_activa')] = True
+            revision_activa = True
+            if errores:
+                st.error('No se puede exportar todavía. Revisa el resumen superior y los avisos rojos en Identificación y 3. Checklist.')
             else:
                 try:
                     copia = json.loads(respaldo)
@@ -313,6 +353,33 @@ def main():
             st.download_button('Descargar PDF', preparado[2], 'informe_checklist.pdf', 'application/pdf', key=widget('descargar'))
         elif preparado:
             st.info('Hay cambios: prepara nuevamente el PDF.')
+
+    # Evaluar después de leer todos los controles para mostrar el estado actual.
+    if revision_activa:
+        errores = revisar_informe(datos)
+        if errores:
+            with resumen_revision.container():
+                st.error(f'{len(errores)} errores que impiden exportar. Abre la pestaña indicada y corrige los puntos señalados.')
+                for error in errores:
+                    st.write(f'• {error["seccion"]} → {error["mensaje"]}')
+        else:
+            resumen_revision.success('Revisión correcta: no hay errores de validación que impidan preparar el PDF.')
+        estilos_errores = []
+        for campo, aviso in avisos_campos.items():
+            encontrados = [e for e in errores if e['seccion'] == 'Identificación' and e['campo'] == campo]
+            if encontrados:
+                aviso.error(encontrados[0]['mensaje'])
+                estilos_errores.append(f'.st-key-{widget(campo)} input {{border:2px solid #B42318 !important; background:#FFF1F0 !important;}}')
+        for grupo, aviso in avisos_grupos.items():
+            encontrados = [e for e in errores if e['seccion'] == grupo]
+            if encontrados:
+                with aviso.container():
+                    for error in encontrados:
+                        st.error(error['mensaje'])
+            else:
+                aviso.caption('Sin errores de validación en este grupo.')
+        if estilos_errores:
+            st.markdown('<style>'+''.join(estilos_errores)+'</style>', unsafe_allow_html=True)
 
 
 if __name__ == '__main__':
