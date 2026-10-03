@@ -92,7 +92,41 @@ CATALOGO_COMPONENTES = {
         "SUSTRATO METÁLICO": ["ESQUEMA DE PROTECCIÓN POR PINTURA", "OXIDACIÓN", "EXISTENCIA DE CORROSIÓN", "EXISTENCIA DE CUI", "DEFORMACIONES", "ROTURAS"],
         "AISLACIÓN": ["DAÑOS EN CHAPA METÁLICA CUBRE AISLACIÓN", "DAÑOS EN MATERIAL AISLANTE", "FALTA DE SELLO"],
         "UNIONES ROSCADAS/BRIDADAS": ["INDICIOS DE FUGAS", "FUGA ACTIVA"],
-    }
+    },
+    "CHANNEL": {
+        "SUSTRATO METÁLICO": ["ESQUEMA DE PROTECCIÓN POR PINTURA", "OXIDACIÓN", "EXISTENCIA DE CORROSIÓN", "EXISTENCIA DE CUI", "DEFORMACIONES", "ROTURAS"],
+        "AISLACIÓN": ["DAÑOS EN CHAPA METÁLICA CUBRE AISLACIÓN", "DAÑOS EN MATERIAL AISLANTE", "FALTA DE SELLO"],
+        "UNIONES ROSCADAS/BRIDADAS": ["INDICIOS DE FUGAS", "FUGA ACTIVA"],
+    },
+    "CARCASA": {
+        "SUSTRATO METÁLICO": ["ESQUEMA DE PROTECCIÓN POR PINTURA", "OXIDACIÓN", "EXISTENCIA DE CUI", "DEFORMACIONES", "ROTURAS"],
+        "AISLACIÓN": ["DAÑOS EN CHAPA METÁLICA CUBRE AISLACIÓN", "DAÑOS EN MATERIAL AISLANTE", "FALTA DE SELLO"],
+        "UNIONES ROSCADAS/BRIDADAS": ["INDICIOS DE FUGAS", "FUGA ACTIVA"],
+    },
+    "BONETE": {
+        "SUSTRATO METÁLICO": ["ESQUEMA DE PROTECCIÓN POR PINTURA", "OXIDACIÓN", "EXISTENCIA DE CORROSIÓN", "EXISTENCIA DE CUI", "DEFORMACIONES", "ROTURAS"],
+        "AISLACIÓN": ["DAÑOS EN CHAPA METÁLICA CUBRE AISLACIÓN", "DAÑOS EN MATERIAL AISLANTE", "FALTA DE SELLO"],
+        "UNIONES ROSCADAS/BRIDADAS": ["INDICIOS DE FUGAS", "FUGA ACTIVA"],
+    },
+    "SOPORTACIONES": {
+        "SUSTRATO METÁLICO": ["ESQUEMA DE PROTECCIÓN POR PINTURA", "OXIDACIÓN", "EXISTENCIA DE CORROSIÓN", "EXISTENCIA DE CUI", "DEFORMACIONES", "ROTURAS"],
+    },
+    "PERNOS DE ANCLAJE": {
+        "": ["SUJECIÓN DE PERNOS", "EXISTENCIA DE CORROSIÓN", "ESQUEMA DE PROTECCIÓN POR PINTURA"],
+    },
+    "VÁLVULAS DE SEGURIDAD": {
+        "SUSTRATO METÁLICO": ["ESQUEMA DE PROTECCIÓN POR PINTURA", "OXIDACIÓN", "EXISTENCIA DE CORROSIÓN", "EXISTENCIA DE CUI", "DEFORMACIONES", "ROTURAS"],
+        "SELLO": ["EVIDENCIAS DE APERTURA", "PLACA DE FECHA DE MANTENCIÓN", "PLACA DE CARACTERÍSTICAS"],
+    },
+    "PLACA DE CARACTERÍSTICAS": {
+        "": ["SIN PLACA", "EXISTENCIA DE OXIDACIÓN/CORROSIÓN", "PLACA SUELTA"],
+    },
+    "CONEXIÓN A TIERRA": {
+        "": ["SIN CONEXIÓN", "CONECTADA A ESTRUCTURA", "CONEXIÓN SUELTA", "PRESENCIA DE CORROSIÓN"],
+    },
+    "INSTRUMENTACIÓN": {
+        "": ["EVIDENCIA DE FUGAS", "FUGA ACTIVA", "DAÑOS EN INSTRUMENTACIÓN", "DATOS DE CALIBRACIÓN"],
+    },
 }
 
 
@@ -104,7 +138,8 @@ def construir_componentes(modelo, inicio=1):
         for n_grupo, (grupo, puntos) in enumerate(grupos.items(), start=1):
             if not puntos:
                 continue
-            lineas.append(f"3.{numero}.{n_grupo} {grupo}")
+            if grupo:
+                lineas.append(f"3.{numero}.{n_grupo} {grupo}")
             for letra, (punto, texto) in enumerate(puntos.items()):
                 lineas.append(f"{chr(65 + letra)}. {punto}")
                 lineas.append(texto.strip() or "Sin observación registrada.")
@@ -1271,7 +1306,7 @@ for nombre in componentes:
         for grupo, opciones in CATALOGO_COMPONENTES[nombre].items():
             anteriores = grupos_previos.get(grupo, {})
             clave = f"comp_widget_{nombre}_{grupo}"
-            puntos = st.multiselect(grupo, opciones, default=list(anteriores), key=clave_informe(clave))
+            puntos = st.multiselect(grupo or "Puntos de inspección", opciones, default=list(anteriores), key=clave_informe(clave))
             textos = {}
             for punto in puntos:
                 clave_texto = f"{clave}_{punto}"
