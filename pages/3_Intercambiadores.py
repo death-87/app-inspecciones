@@ -144,6 +144,24 @@ COLORES_COMPONENTES = {
 }
 
 
+def colorear_etiquetas_componentes(componentes):
+    # El orden de las etiquetas coincide con los valores del multiselect.
+    # Recalcular al quitar o añadir mantiene el color asociado al nombre.
+    selector = f".st-key-{clave_informe('comp_widget_seleccion')}"
+    reglas = []
+    for posicion, nombre in enumerate(componentes, start=1):
+        _, fondo, acento = COLORES_COMPONENTES[nombre]
+        etiqueta = f'{selector} :is([data-baseweb="tag"], [data-tag]):nth-child({posicion} of :is([data-baseweb="tag"], [data-tag]))'
+        reglas.append(f"""
+        {etiqueta} {{ background-color: {fondo} !important; color: {acento} !important; border: 1px solid {acento} !important; }}
+        {etiqueta} span {{ color: {acento} !important; }}
+        {etiqueta} button {{ color: {acento} !important; background-color: transparent !important; }}
+        {etiqueta} svg {{ color: {acento} !important; fill: currentColor; }}
+        """)
+    if reglas:
+        st.markdown("<style>" + "\n".join(reglas) + "</style>", unsafe_allow_html=True)
+
+
 def estilo_panel_componente(nombre):
     # Clave estable: el color no cambia al seleccionar o quitar otro componente.
     identificador = hashlib.sha256(nombre.encode("utf-8")).hexdigest()[:12]
@@ -159,9 +177,10 @@ def estilo_panel_componente(nombre):
     {selector} h5 {{ color: {acento} !important; margin-bottom: .5rem; }}
     {selector} [data-testid="stWidgetLabel"] p {{ color: #243447 !important; }}
     {selector} [data-baseweb="select"] > div {{ background-color: #FFFFFF !important; color: #243447 !important; }}
-    {selector} [data-baseweb="tag"] {{ background-color: {seleccion} !important; color: {acento} !important; border: 1px solid {acento} !important; }}
-    {selector} [data-baseweb="tag"] span {{ color: {acento} !important; }}
-    {selector} [data-baseweb="tag"] svg {{ color: {acento} !important; fill: currentColor; }}
+    {selector} :is([data-baseweb="tag"], [data-tag]) {{ background-color: {seleccion} !important; color: {acento} !important; border: 1px solid {acento} !important; }}
+    {selector} :is([data-baseweb="tag"], [data-tag]) span {{ color: {acento} !important; }}
+    {selector} :is([data-baseweb="tag"], [data-tag]) button {{ color: {acento} !important; background-color: transparent !important; }}
+    {selector} :is([data-baseweb="tag"], [data-tag]) svg {{ color: {acento} !important; fill: currentColor; }}
     {selector} textarea {{ background-color: #FFFFFF !important; color: #243447 !important; caret-color: {acento}; }}
     </style>""", unsafe_allow_html=True)
     return clave
@@ -1336,6 +1355,7 @@ for num_sec, tit_sec in secciones_base.items():
                 "Agregar componentes al informe", list(CATALOGO_COMPONENTES),
                 default=list(modelo_anterior), key=clave_informe("comp_widget_seleccion"),
             )
+            colorear_etiquetas_componentes(componentes)
             modelo_actual = {}
             for nombre in componentes:
                 grupos_previos = modelo_anterior.get(nombre, {})
