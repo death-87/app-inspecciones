@@ -309,6 +309,7 @@ def generar_pdf(datos, solo_completados=False):
         [p('INFORME DE INSPECCIÓN VISUAL',titulo),p('CHECKLIST DE CIRCUITOS Y COMPONENTES',centrado)],
         logo_derecho]], colWidths=[102,336,102])
     cabecera_titulo.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('ALIGN',(0,0),(0,0),'LEFT'),('ALIGN',(2,0),(2,0),'RIGHT'),
         ('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0),
         ('TOPPADDING',(0,0),(-1,-1),0),('BOTTOMPADDING',(0,0),(-1,-1),4)]))
     story.append(cabecera_titulo)
@@ -347,19 +348,22 @@ def generar_pdf(datos, solo_completados=False):
     story.extend([PageBreak(), p('4. SET FOTOGRÁFICO', heading)])
     if not datos['fotos']:
         story.append(p('Sin fotografías adjuntas.', body))
-    for inicio in range(0, len(datos['fotos']), 4):
+    # Dos columnas y un máximo de tres filas por bloque fotográfico.
+    for inicio in range(0, len(datos['fotos']), 6):
         if inicio:
             story.extend([PageBreak(), p('4. SET FOTOGRÁFICO (continuación)', heading)])
         celdas = []
-        for n, foto in enumerate(datos['fotos'][inicio:inicio+4], start=inicio+1):
+        for n, foto in enumerate(datos['fotos'][inicio:inicio+6], start=inicio+1):
             raw = base64.b64decode(foto['datos'])
             img = PDFImage(io.BytesIO(raw))
-            factor = min(248/img.imageWidth, 160/img.imageHeight)
+            factor = min(276/img.imageWidth, 210/img.imageHeight)
             img.drawWidth, img.drawHeight = img.imageWidth*factor, img.imageHeight*factor
             celdas.append([img, p(f'Imagen N.º {n}: {foto["leyenda"]}', small)])
         for pos in range(0,len(celdas),2):
-            tabla = Table([[celdas[pos], celdas[pos+1] if pos+1<len(celdas) else '']], colWidths=[270,270])
-            tabla.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),('BOX',(0,0),(-1,-1),.4,colors.lightgrey),('BOTTOMPADDING',(0,0),(-1,-1),12)]))
+            tabla = Table([[celdas[pos], celdas[pos+1] if pos+1<len(celdas) else '']], colWidths=[282,282], hAlign='CENTER')
+            tabla.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),
+                ('LEFTPADDING',(0,0),(-1,-1),3),('RIGHTPADDING',(0,0),(-1,-1),3),
+                ('TOPPADDING',(0,0),(-1,-1),2),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
             story.append(tabla)
     for n,esquema in enumerate(datos['esquemas'],start=1):
         story.extend([PageBreak(),p('5. ESQUEMAS',heading)])
