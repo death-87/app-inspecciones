@@ -100,7 +100,22 @@ def inconsistencias(datos):
     return problemas
 
 
-def generar_pdf(datos):
+def punto_con_datos(fila):
+    return (fila['Respuesta'] != 'Sin evaluar'
+            or fila['Evaluación'] != 'Sin evaluar'
+            or bool(fila['Observaciones'].strip()))
+
+
+def grupos_para_exportar(datos, solo_completados=False):
+    resultado = {}
+    for grupo, contenido in datos['grupos'].items():
+        filas = [r for r in contenido['filas'] if not solo_completados or punto_con_datos(r)]
+        if filas or contenido['observaciones'].strip() or not solo_completados:
+            resultado[grupo] = {'filas': filas, 'observaciones': contenido['observaciones']}
+    return resultado
+
+
+def generar_pdf(datos, solo_completados=False):
     validar(datos)
     campos = datos["campos"]
     buffer = io.BytesIO()
@@ -146,7 +161,10 @@ def generar_pdf(datos):
               p(f'Inspector visual: {campos["inspector"]}', body), p(f'Ingeniero de operaciones: {campos["ingeniero"]}', body),
               p('Destino: Original y copia 1: Enap S.A. - DCEET. Copia 2: Ingemars Ingeniería Ltda.', small), PageBreak(),
               p('3. DESARROLLO CHECK LIST', heading), p('N/A: No aplica · C: Conforme · NC: No conforme. Sin evaluar: celdas vacías.', small)]
-    for letra, (grupo, contenido) in enumerate(datos['grupos'].items()):
+    grupos_exportados = grupos_para_exportar(datos, solo_completados)
+    if not grupos_exportados:
+        story.append(p('No se registraron puntos ni observaciones en el checklist.', body))
+    for letra, (grupo, contenido) in enumerate(grupos_exportados.items()):
         filas = [[p(f'{chr(97+letra)}) {grupo}'), p('SÍ'), p('NO'), p('N/A'), p('C'), p('NC'), p('Observaciones')]]
         for fila in contenido['filas']:
             respuesta, evaluacion = fila['Respuesta'], fila['Evaluación']
@@ -273,28 +291,25 @@ def main():
         respaldo = json.dumps(datos, ensure_ascii=False, indent=2).encode('utf-8')
         huella = hashlib.sha256(respaldo).hexdigest()
         st.download_button('Descargar respaldo editable', respaldo, 'checklist_respaldo.json', 'application/json', key=widget('json'))
-        pendientes = sum(r['Respuesta']=='Sin evaluar' or r['Evaluación']=='Sin evaluar' for g in datos['grupos'].values() for r in g['filas'])
-        st.caption(f'{pendientes} puntos pendientes de completar.')
-        borrador = st.checkbox('Exportar como borrador con puntos pendientes', key=widget('borrador'))
+        modo = st.radio('Contenido del PDF', ['Checklist completo', 'Solo puntos completados'], key=widget('modo_exportacion'))
+        solo_completados = modo == 'Solo puntos completados'
+        llenos = sum(punto_con_datos(r) for g in datos['grupos'].values() for r in g['filas'])
+        st.caption(f'{llenos} de 28 puntos tienen datos. Solo puntos completados incluye cualquier punto con una respuesta, evaluación u observación. Los puntos vacíos se omiten; las observaciones de grupo se conservan.')
         if st.button('Preparar PDF', type='primary', key=widget('preparar')):
             errores = inconsistencias(datos)
             if not campos['numero'].strip() or not campos['equipo'].strip() or not campos['inspector'].strip():
                 st.error('Completa número de informe, equipo y nombre del inspector.')
             elif errores:
                 st.error('\n\n'.join(errores))
-            elif pendientes and not borrador:
-                st.warning('Completa los puntos pendientes o selecciona exportar como borrador.')
             else:
                 try:
                     copia = json.loads(respaldo)
-                    if borrador:
-                        copia['campos']['numero'] += ' - BORRADOR'
-                    pdf = generar_pdf(copia)
-                    st.session_state[key('pdf')] = (huella, borrador, pdf)
+                    pdf = generar_pdf(copia, solo_completados=solo_completados)
+                    st.session_state[key('pdf')] = (huella, modo, pdf)
                 except Exception as exc:
                     st.error(f'No se pudo generar el PDF: {exc}')
         preparado = st.session_state.get(key('pdf'))
-        if preparado and preparado[:2] == (huella,borrador):
+        if preparado and preparado[:2] == (huella,modo):
             st.download_button('Descargar PDF', preparado[2], 'informe_checklist.pdf', 'application/pdf', key=widget('descargar'))
         elif preparado:
             st.info('Hay cambios: prepara nuevamente el PDF.')
