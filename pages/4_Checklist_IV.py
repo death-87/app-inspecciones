@@ -285,17 +285,18 @@ def main():
             panel = key(f'grupo_color_{n}')
             st.markdown(f'''<style>
             .st-key-{panel} {{background:{fondo}; border-left:5px solid {acento}; border-radius:10px; padding:14px; margin-bottom:18px;}}
-            .st-key-{panel} h3 {{color:{acento} !important; font-size:1.1rem;}}
+            .st-key-{panel} [data-testid="stExpander"] summary {{background:{fondo}; color:{acento} !important;}}
+            .st-key-{panel} [data-testid="stExpander"] summary p {{color:{acento} !important; font-weight:600;}}
             </style>''', unsafe_allow_html=True)
             with st.container(key=panel):
-                st.subheader(grupo)
-                editado = st.data_editor(pd.DataFrame(contenido['filas']), hide_index=True, disabled=['Punto'], num_rows='fixed', use_container_width=True,
-                    column_config={'Respuesta': st.column_config.SelectboxColumn(options=['Sin evaluar','Sí','No','N/A'], required=True),
-                                   'Evaluación': st.column_config.SelectboxColumn(options=['Sin evaluar','C','NC','N/A'], required=True),
-                                   'Observaciones': st.column_config.TextColumn(width='large')}, key=widget(f'editor_{n}'))
-                contenido['filas'] = editado.fillna('').to_dict('records')
-                contenido['observaciones'] = st.text_area('Observaciones del grupo', value=contenido['observaciones'], key=widget(f'obs_{n}'))
-                avisos_grupos[grupo] = st.empty()
+                with st.expander(grupo, expanded=True):
+                    editado = st.data_editor(pd.DataFrame(contenido['filas']), hide_index=True, disabled=['Punto'], num_rows='fixed', use_container_width=True,
+                        column_config={'Respuesta': st.column_config.SelectboxColumn(options=['Sin evaluar','Sí','No','N/A'], required=True),
+                                       'Evaluación': st.column_config.SelectboxColumn(options=['Sin evaluar','C','NC','N/A'], required=True),
+                                       'Observaciones': st.column_config.TextColumn(width='large')}, key=widget(f'editor_{n}'))
+                    contenido['filas'] = editado.fillna('').to_dict('records')
+                    contenido['observaciones'] = st.text_area('Observaciones del grupo', value=contenido['observaciones'], key=widget(f'obs_{n}'))
+                    avisos_grupos[grupo] = st.empty()
     with tabs[3]:
         archivos = st.file_uploader('Fotografías JPG o PNG (máximo 20)', type=['jpg','jpeg','png'], accept_multiple_files=True, key=widget('fotos'))
         if st.button('Agregar fotografías', key=widget('agregar')):
