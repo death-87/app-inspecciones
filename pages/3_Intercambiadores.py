@@ -1290,42 +1290,44 @@ for num_sec, tit_sec in secciones_base.items():
             "subpuntos": subpuntos_list
         }
 
-# Componentes opcionales: se incorporan solamente a Resultados (sección 3).
-st.markdown("#### Componentes incluidos en los resultados")
-st.caption("Selecciona el componente y los puntos que necesitas documentar. Lo no seleccionado no aparece en PDF ni Word. Quitar una selección conserva el texto durante esta edición; Nuevo informe lo limpia.")
-modelo_anterior = estado_informe.get("componentes_modelo", {})
-componentes = st.multiselect(
-    "Agregar componentes al informe", list(CATALOGO_COMPONENTES),
-    default=list(modelo_anterior), key=clave_informe("comp_widget_seleccion"),
-)
-modelo_actual = {}
-for nombre in componentes:
-    grupos_previos = modelo_anterior.get(nombre, {})
-    grupos_actuales = {}
-    with st.expander(nombre, expanded=True):
-        for grupo, opciones in CATALOGO_COMPONENTES[nombre].items():
-            anteriores = grupos_previos.get(grupo, {})
-            clave = f"comp_widget_{nombre}_{grupo}"
-            puntos = st.multiselect(grupo or "Puntos de inspección", opciones, default=list(anteriores), key=clave_informe(clave))
-            textos = {}
-            for punto in puntos:
-                clave_texto = f"{clave}_{punto}"
-                # Los valores del modelo sobreviven a que un widget deje de mostrarse.
-                archivo_textos = estado_informe.get("componentes_borradores", {})
-                valor = anteriores.get(punto, archivo_textos.get(clave_texto, ""))
-                textos[punto] = st.text_area(punto, value=valor, key=clave_informe(clave_texto), height=80)
-                archivo_textos[clave_texto] = textos[punto]
-                estado_informe["componentes_borradores"] = archivo_textos
-            if textos:
-                grupos_actuales[grupo] = textos
-    modelo_actual[nombre] = grupos_actuales
-estado_informe["componentes_modelo"] = modelo_actual
-secciones_dinamicas[3]["componentes_modelo"] = modelo_actual
-secciones_dinamicas[3]["subpuntos"].extend(
-    construir_componentes(modelo_actual, inicio=len(secciones_dinamicas[3]["subpuntos"]) + 1)
-)
-if componentes:
-    st.caption("Los componentes se numeran después de los subpuntos manuales de Resultados. Las categorías y letras se numeran consecutivamente según lo seleccionado.")
+        if num_sec == 3:
+            # Componentes opcionales: se incorporan solamente a Resultados (sección 3).
+            st.markdown("#### Componentes incluidos en los resultados")
+            st.caption("Selecciona el componente y los puntos que necesitas documentar. Lo no seleccionado no aparece en PDF ni Word. Quitar una selección conserva el texto durante esta edición; Nuevo informe lo limpia.")
+            modelo_anterior = estado_informe.get("componentes_modelo", {})
+            componentes = st.multiselect(
+                "Agregar componentes al informe", list(CATALOGO_COMPONENTES),
+                default=list(modelo_anterior), key=clave_informe("comp_widget_seleccion"),
+            )
+            modelo_actual = {}
+            for nombre in componentes:
+                grupos_previos = modelo_anterior.get(nombre, {})
+                grupos_actuales = {}
+                with st.container():
+                    st.markdown(f"##### {nombre}")
+                    for grupo, opciones in CATALOGO_COMPONENTES[nombre].items():
+                        anteriores = grupos_previos.get(grupo, {})
+                        clave = f"comp_widget_{nombre}_{grupo}"
+                        puntos = st.multiselect(grupo or "Puntos de inspección", opciones, default=list(anteriores), key=clave_informe(clave))
+                        textos = {}
+                        for punto in puntos:
+                            clave_texto = f"{clave}_{punto}"
+                            # Los valores del modelo sobreviven a que un widget deje de mostrarse.
+                            archivo_textos = estado_informe.get("componentes_borradores", {})
+                            valor = anteriores.get(punto, archivo_textos.get(clave_texto, ""))
+                            textos[punto] = st.text_area(punto, value=valor, key=clave_informe(clave_texto), height=80)
+                            archivo_textos[clave_texto] = textos[punto]
+                            estado_informe["componentes_borradores"] = archivo_textos
+                        if textos:
+                            grupos_actuales[grupo] = textos
+                modelo_actual[nombre] = grupos_actuales
+            estado_informe["componentes_modelo"] = modelo_actual
+            secciones_dinamicas[3]["componentes_modelo"] = modelo_actual
+            secciones_dinamicas[3]["subpuntos"].extend(
+                construir_componentes(modelo_actual, inicio=len(secciones_dinamicas[3]["subpuntos"]) + 1)
+            )
+            if componentes:
+                st.caption("Los componentes se numeran después de los subpuntos manuales de Resultados. Las categorías y letras se numeran consecutivamente según lo seleccionado.")
 
 # REGISTROS FOTOGRÁFICOS Y ESQUEMAS
 st.markdown("---")
