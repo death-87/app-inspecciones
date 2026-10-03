@@ -2,6 +2,7 @@ import io
 import re
 import json
 import hashlib
+from html import escape
 import requests
 import streamlit as st
 import pandas as pd
@@ -86,8 +87,50 @@ class EstadoInforme(MutableMapping):
 
 estado_informe = EstadoInforme()
 
+CATALOGO_COMPONENTES = {
+    "TAPA DE CHANNEL": {
+        "SUSTRATO METÁLICO": ["ESQUEMA DE PROTECCIÓN POR PINTURA", "OXIDACIÓN", "EXISTENCIA DE CORROSIÓN", "EXISTENCIA DE CUI", "DEFORMACIONES", "ROTURAS"],
+        "AISLACIÓN": ["DAÑOS EN CHAPA METÁLICA CUBRE AISLACIÓN", "DAÑOS EN MATERIAL AISLANTE", "FALTA DE SELLO"],
+        "UNIONES ROSCADAS/BRIDADAS": ["INDICIOS DE FUGAS", "FUGA ACTIVA"],
+    }
+}
+
+
+def construir_componentes(modelo, inicio=1):
+    """Solo exportar componentes y puntos elegidos; no inferir condiciones."""
+    resultado = []
+    for numero, (nombre, grupos) in enumerate(modelo.items(), start=inicio):
+        lineas = []
+        for n_grupo, (grupo, puntos) in enumerate(grupos.items(), start=1):
+            if not puntos:
+                continue
+            lineas.append(f"3.{numero}.{n_grupo} {grupo}")
+            for letra, (punto, texto) in enumerate(puntos.items()):
+                lineas.append(f"{chr(65 + letra)}. {punto}")
+                lineas.append(texto.strip() or "Sin observación registrada.")
+        resultado.append({"titulo": nombre, "contenido": "\n".join(lineas), "componente_opcional": True})
+    return resultado
+
+
+def restablecer_componentes(modelo=None):
+    for clave in list(estado_informe):
+        if clave.startswith("comp_widget_"):
+            del estado_informe[clave]
+    modelo = modelo or {}
+    estado_informe["componentes_modelo"] = modelo
+    estado_informe["componentes_borradores"] = {}
+    estado_informe["comp_widget_seleccion"] = list(modelo)
+    for nombre, grupos in CATALOGO_COMPONENTES.items():
+        for grupo in grupos:
+            clave = f"comp_widget_{nombre}_{grupo}"
+            puntos = modelo.get(nombre, {}).get(grupo, {})
+            estado_informe[clave] = list(puntos)
+            for punto, texto in puntos.items():
+                estado_informe[f"{clave}_{punto}"] = texto
+
 
 def limpiar_editor():
+    restablecer_componentes()
     campos = {"num_informe", "ot", "fecha", "unidad", "tag", "descripcion", "aca", "motivo", "alcance", "inspector_firma", "drive_link", "buscar_equipo", "unidad_selector", "unidad_manual", "chk_eliminar", "exportacion_visual", "informe_guardado_selector", "guardado_visual", "carpeta_imagenes_actual"}
     prefijos = ("cant_subpuntos_sec_", "tit_", "cont_", "img_resguardada_", "esq_resguardado_")
     for clave in list(estado_informe):
@@ -614,7 +657,10 @@ def generar_pdf_plantilla_inspeccion(datos_encabezado, secciones_dinamicas, imag
                 num_sub = f"{sec_num}.{idx}"
                 titulo_sub = f"{num_sub} {sub['titulo']}" if sub['titulo'] else num_sub
                 story.append(Paragraph(titulo_sub, subsec_heading_style))
-                story.append(Paragraph(sub['contenido'] if sub['contenido'] else "-", text_style))
+                contenido = sub['contenido'] if sub['contenido'] else "-"
+                if sub.get("componente_opcional"):
+                    contenido = escape(contenido).replace("\n", "<br/>")
+                story.append(Paragraph(contenido, text_style))
 
     # 5. REGISTROS FOTOGRÁFICOS
     story.append(PageBreak())
@@ -1083,8 +1129,9 @@ if btn_cargar:
             estado_informe['drive_link'] = datos_cargados['drive_link']
 
             sec_loaded = datos_cargados['secciones_dinamicas']
+            restablecer_componentes(sec_loaded.get(3, {}).get("componentes_modelo", {}))
             for s_num in [1, 2, 3, 4]:
-                sub_list = sec_loaded.get(s_num, {}).get('subpuntos', [])
+                sub_list = [sub for sub in sec_loaded.get(s_num, {}).get('subpuntos', []) if not sub.get("componente_opcional")]
                 estado_informe[f"cant_subpuntos_sec_{s_num}"] = len(sub_list)
                 for idx, sub in enumerate(sub_list, start=1):
                     estado_informe[f"tit_{s_num}_{idx}"] = sub.get("titulo", "")
@@ -1207,6 +1254,43 @@ for num_sec, tit_sec in secciones_base.items():
             "titulo": tit_sec,
             "subpuntos": subpuntos_list
         }
+
+# Componentes opcionales: se incorporan solamente a Resultados (sección 3).
+st.markdown("#### Componentes incluidos en los resultados")
+st.caption("Selecciona el componente y los puntos que necesitas documentar. Lo no seleccionado no aparece en PDF ni Word. Quitar una selección conserva el texto durante esta edición; Nuevo informe lo limpia.")
+modelo_anterior = estado_informe.get("componentes_modelo", {})
+componentes = st.multiselect(
+    "Agregar componentes al informe", list(CATALOGO_COMPONENTES),
+    default=list(modelo_anterior), key=clave_informe("comp_widget_seleccion"),
+)
+modelo_actual = {}
+for nombre in componentes:
+    grupos_previos = modelo_anterior.get(nombre, {})
+    grupos_actuales = {}
+    with st.expander(nombre, expanded=True):
+        for grupo, opciones in CATALOGO_COMPONENTES[nombre].items():
+            anteriores = grupos_previos.get(grupo, {})
+            clave = f"comp_widget_{nombre}_{grupo}"
+            puntos = st.multiselect(grupo, opciones, default=list(anteriores), key=clave_informe(clave))
+            textos = {}
+            for punto in puntos:
+                clave_texto = f"{clave}_{punto}"
+                # Los valores del modelo sobreviven a que un widget deje de mostrarse.
+                archivo_textos = estado_informe.get("componentes_borradores", {})
+                valor = anteriores.get(punto, archivo_textos.get(clave_texto, ""))
+                textos[punto] = st.text_area(punto, value=valor, key=clave_informe(clave_texto), height=80)
+                archivo_textos[clave_texto] = textos[punto]
+                estado_informe["componentes_borradores"] = archivo_textos
+            if textos:
+                grupos_actuales[grupo] = textos
+    modelo_actual[nombre] = grupos_actuales
+estado_informe["componentes_modelo"] = modelo_actual
+secciones_dinamicas[3]["componentes_modelo"] = modelo_actual
+secciones_dinamicas[3]["subpuntos"].extend(
+    construir_componentes(modelo_actual, inicio=len(secciones_dinamicas[3]["subpuntos"]) + 1)
+)
+if componentes:
+    st.caption("Los componentes se numeran después de los subpuntos manuales de Resultados. Las categorías y letras se numeran consecutivamente según lo seleccionado.")
 
 # REGISTROS FOTOGRÁFICOS Y ESQUEMAS
 st.markdown("---")
