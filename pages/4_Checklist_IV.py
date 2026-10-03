@@ -240,21 +240,21 @@ def generar_pdf(datos, solo_completados=False):
     body = ParagraphStyle("texto", parent=styles["Normal"], fontSize=9, leading=12, spaceAfter=5)
     small = ParagraphStyle("celda", parent=body, fontSize=7, leading=9, spaceAfter=0)
     heading = ParagraphStyle("seccion", parent=styles["Heading2"], fontSize=11, leading=14, textColor=colors.HexColor("#1E3A8A"), keepWithNext=True)
-    titulo = ParagraphStyle('titulo_informe', parent=heading, fontSize=15, leading=18, alignment=1, spaceAfter=10)
+    titulo = ParagraphStyle('titulo_informe', parent=heading, fontSize=13, leading=15, alignment=1, spaceBefore=0, spaceAfter=2)
     def p(texto, style=small):
         return Paragraph(escape(str(texto)).replace("\n", "<br/>"), style)
     centrado = ParagraphStyle('responsable', parent=small, alignment=1)
     recuadro = Table([
-        [p('Solicitante: '+campos['solicitante']), '', ''],
-        [p('Destino\nOriginal: Enap S.A. - DCEET\nCopia 1: Enap S.A. - DCEET\nCopia 2: Ingemars Ingeniería Ltda.'), p(campos['inspector'],centrado), p(campos['ingeniero'],centrado)],
-        ['', p('Inspector visual',centrado), p('Ingeniero de operaciones',centrado)],
+        [p(campos['solicitante'],centrado), p(campos['inspector'],centrado), p(campos['ingeniero'],centrado)],
+        [p('Solicitante',centrado), p('Inspector visual',centrado), p('Ingeniero de operaciones',centrado)],
+        [p('Destino: Original y copia 1: Enap S.A. - DCEET. Copia 2: Ingemars Ingeniería Ltda.'), '', ''],
     ], colWidths=[180,180,180])
     recuadro.setStyle(TableStyle([
-        ('SPAN',(0,0),(2,0)),('SPAN',(0,1),(0,2)),
+        ('SPAN',(0,2),(2,2)),
         ('GRID',(0,0),(-1,-1),.5,colors.HexColor('#94A3B8')),
         ('VALIGN',(0,0),(-1,-1),'BOTTOM'),
-        ('BACKGROUND',(1,2),(2,2),colors.HexColor('#F3F4F6')),
-        ('TOPPADDING',(1,1),(2,1),26),('BOTTOMPADDING',(0,0),(-1,-1),6),
+        ('BACKGROUND',(0,1),(2,1),colors.HexColor('#F3F4F6')),
+        ('TOPPADDING',(0,0),(2,0),14),('BOTTOMPADDING',(0,0),(-1,-1),3),
     ]))
     _,alto_recuadro = recuadro.wrap(540,700)
     if alto_recuadro>200:
@@ -268,24 +268,29 @@ def generar_pdf(datos, solo_completados=False):
         if documento.page == 1:
             recuadro.drawOn(canvas,36,40)
         canvas.restoreState()
-    inicio_cuerpo = 40 + alto_recuadro + 14
+    inicio_cuerpo = 40 + alto_recuadro + 8
     doc.addPageTemplates([
         PageTemplate(id='primera', frames=[Frame(36,inicio_cuerpo,540,756-inicio_cuerpo,id='cuerpo_primera')],onPage=marco,autoNextPageTemplate='desarrollo'),
         PageTemplate(id='desarrollo',frames=[Frame(36,40,540,716,id='cuerpo_desarrollo')],onPage=marco),
     ])
     # Identificación como contenido inicial, nunca como encabezado repetido.
     story = []
+    logo = ''
     ruta_logo = Path(__file__).resolve().parent.parent / 'logo.png'
     if ruta_logo.is_file():
         logo = PDFImage(str(ruta_logo))
-        escala = min(120/logo.imageWidth, 45/logo.imageHeight)
+        escala = min(105/logo.imageWidth, 30/logo.imageHeight)
         logo.drawWidth, logo.drawHeight = logo.imageWidth*escala, logo.imageHeight*escala
         logo.hAlign = 'RIGHT'
-        story.append(logo)
-    story.append(p('INFORME DE INSPECCIÓN VISUAL - CHECKLIST', titulo))
+    cabecera_titulo = Table([[[p('INFORME DE INSPECCIÓN VISUAL',titulo),p('CHECKLIST DE CIRCUITOS Y COMPONENTES',centrado)], logo]], colWidths=[420,120])
+    cabecera_titulo.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('TOPPADDING',(0,0),(-1,-1),0),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
+    story.append(cabecera_titulo)
     pares = [('numero','ot'),('contrato','cliente'),('fecha_inspeccion','fecha_emision'),
              ('planta','equipo'),('descripcion','aca'),('procedimiento','codigo'),('ensayo','complementario')]
     etiquetas = dict(CAMPOS, fecha_inspeccion='Fecha de inspección', fecha_emision='Fecha de emisión')
+    etiquetas.update(numero='N.º informe',fecha_inspeccion='F. inspección',fecha_emision='F. emisión',
+                     descripcion='Descripción',equipo='TAG / equipo',codigo='Código evaluación',
+                     ensayo='Ensayo compl.',complementario='N.º inf. compl.')
     cab = [[p(etiquetas[a].upper()+':'), p(campos[a]), p(etiquetas[b].upper()+':'), p(campos[b])] for a,b in pares]
     cab.append([p('ALCANCE:'), p(campos['alcance'] or '-'), '', ''])
     tabla = Table(cab, colWidths=[90,180,90,180])
@@ -293,8 +298,8 @@ def generar_pdf(datos, solo_completados=False):
         ('BACKGROUND',(0,0),(0,-1),colors.HexColor('#F3F4F6')),
         ('BACKGROUND',(2,0),(2,-2),colors.HexColor('#F3F4F6')),
         ('SPAN',(1,-1),(3,-1)),('VALIGN',(0,0),(-1,-1),'TOP'),
-        ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
-    story.extend([tabla, Spacer(1,12),
+        ('TOPPADDING',(0,0),(-1,-1),2),('BOTTOMPADDING',(0,0),(-1,-1),2)]))
+    story.extend([tabla, Spacer(1,6),
              p("1. CONCLUSIONES", heading), p(campos["conclusiones"] or "Sin información registrada.", body),
              p("2. RECOMENDACIONES", heading), p(campos["recomendaciones"] or "Sin información registrada.", body)])
     story += [PageBreak(),
@@ -434,12 +439,21 @@ def main():
         nombre_actual = campos['inspector']
         if nombre_actual == 'Jorge Hernandez':
             nombre_actual = 'Jorge Hernández'
-        opciones = ['']+INSPECTORES
-        if nombre_actual and nombre_actual not in opciones:
-            opciones.append(nombre_actual)
-        campos['inspector'] = st.selectbox('Inspector visual', opciones, index=opciones.index(nombre_actual), key=widget('responsable_inspector'))
+        opciones = ['']+INSPECTORES+['Otro inspector (escribir nombre)']
+        seleccion = nombre_actual if nombre_actual in opciones else opciones[-1]
+        elegido = st.selectbox('Inspector visual', opciones, index=opciones.index(seleccion), key=widget('responsable_inspector_lista'))
+        if elegido == opciones[-1]:
+            campos['inspector'] = st.text_input('Nombre del inspector', value=nombre_actual if nombre_actual not in INSPECTORES else '', key=widget('responsable_inspector_manual'))
+        else:
+            campos['inspector'] = elegido
         avisos_campos['inspector'] = st.empty()
-        campos['ingeniero'] = st.text_input('Ingeniero de operaciones', value=campos['ingeniero'], placeholder='Gabriel Allendes V.', key=widget('responsable_ingeniero'))
+        opciones_ingeniero = ['Gabriel Allendes V.', 'Otro ingeniero (escribir nombre)']
+        elegido_ing = st.selectbox('Ingeniero de operaciones', opciones_ingeniero,
+            index=0 if campos['ingeniero']=='Gabriel Allendes V.' else 1, key=widget('responsable_ingeniero_lista'))
+        if elegido_ing == opciones_ingeniero[1]:
+            campos['ingeniero'] = st.text_input('Nombre del ingeniero',value=campos['ingeniero'] if campos['ingeniero']!='Gabriel Allendes V.' else '',key=widget('responsable_ingeniero_manual'))
+        else:
+            campos['ingeniero'] = 'Gabriel Allendes V.'
     with tabs[2]:
         st.caption('Respuesta: Sí / No / N/A. Evaluación: C / NC / N/A. Sí no significa Conforme: describe la presencia del aspecto consultado. Nada se marca automáticamente.')
         for n,(grupo, contenido) in enumerate(datos['grupos'].items()):
