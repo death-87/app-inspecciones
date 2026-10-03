@@ -9,6 +9,7 @@ import json
 import re
 from datetime import date
 from html import escape
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -233,44 +234,45 @@ def generar_pdf(datos, solo_completados=False):
     validar(datos)
     campos = datos["campos"]
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=36, rightMargin=36, topMargin=169, bottomMargin=40)
+    doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=40)
     styles = getSampleStyleSheet()
     body = ParagraphStyle("texto", parent=styles["Normal"], fontSize=9, leading=12, spaceAfter=5)
     small = ParagraphStyle("celda", parent=body, fontSize=7, leading=9, spaceAfter=0)
-    heading = ParagraphStyle("seccion", parent=styles["Heading2"], fontSize=11, leading=14, textColor=colors.HexColor("#17324D"))
+    heading = ParagraphStyle("seccion", parent=styles["Heading2"], fontSize=11, leading=14, textColor=colors.HexColor("#1E3A8A"), keepWithNext=True)
+    titulo = ParagraphStyle('titulo_informe', parent=heading, fontSize=15, leading=18, alignment=1, spaceAfter=10)
     def p(texto, style=small):
         return Paragraph(escape(str(texto)).replace("\n", "<br/>"), style)
     def marco(canvas, documento):
         canvas.saveState()
-        canvas.setFont("Helvetica-Bold", 9)
-        canvas.setFillColor(colors.HexColor("#17324D"))
-        canvas.drawCentredString(306, 768, "SERVICIO DE INSPECCIÓN Y EVALUACIÓN DE ACTIVOS FÍSICOS")
-        canvas.drawCentredString(306, 755, "DE ENAP REFINERÍA ACONCAGUA")
-        canvas.setFont("Helvetica-Bold", 8)
-        canvas.drawCentredString(306, 741, "INFORME DE INSPECCIÓN VISUAL DE CIRCUITOS Y COMPONENTES DE CAÑERÍA")
-        def corto(nombre):
-            valor = campos[nombre]
-            return valor if len(valor) <= 85 else valor[:82] + "..."
-        cab = [[p(f'Informe: {corto("numero")}'), p(f'Contrato: {corto("contrato")}'), p(f'OT/PPTO: {corto("ot")}')],
-               [p(f'Cliente: {corto("cliente")}'), p(f'Planta: {corto("planta")}'), p(f'Equipo: {corto("equipo")}')],
-               [p(f'Inspección: {campos["fecha_inspeccion"]}'), p(f'Emisión: {campos["fecha_emision"]}'), p(f'Procedimiento: {corto("procedimiento")}')],
-               [p(f'Código: {corto("codigo")}'), p(f'Ensayo: {corto("ensayo")}'), p(f'Complementario: {corto("complementario")}')]]
-        tabla = Table(cab, colWidths=[180]*3)
-        tabla.setStyle(TableStyle([('GRID',(0,0),(-1,-1),.4,colors.HexColor('#CBD5E1')),('VALIGN',(0,0),(-1,-1),'TOP'),('FONTSIZE',(0,0),(-1,-1),7)]))
-        _, alto = tabla.wrap(540, 120)
-        tabla.drawOn(canvas, 36, 730-alto)
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(colors.HexColor("#526579"))
         canvas.drawString(36, 23, "Este informe no debe ser reproducido salvo en su totalidad.")
         canvas.drawRightString(576, 23, f"Página {documento.page}")
         canvas.restoreState()
-    story = [p(f'Descripción: {campos["descripcion"]} · ACA: {campos["aca"]}', body), p("ALCANCE", heading), p(campos["alcance"] or "Sin información registrada.", body),
+    # Identificación como contenido inicial, nunca como encabezado repetido.
+    story = []
+    ruta_logo = Path(__file__).resolve().parent.parent / 'logo.png'
+    if ruta_logo.is_file():
+        logo = PDFImage(str(ruta_logo))
+        escala = min(120/logo.imageWidth, 45/logo.imageHeight)
+        logo.drawWidth, logo.drawHeight = logo.imageWidth*escala, logo.imageHeight*escala
+        logo.hAlign = 'RIGHT'
+        story.append(logo)
+    story.append(p('INFORME DE INSPECCIÓN VISUAL - CHECKLIST', titulo))
+    pares = [('numero','ot'),('contrato','cliente'),('fecha_inspeccion','fecha_emision'),
+             ('planta','equipo'),('descripcion','aca'),('procedimiento','codigo'),('ensayo','complementario')]
+    etiquetas = dict(CAMPOS, fecha_inspeccion='Fecha de inspección', fecha_emision='Fecha de emisión')
+    cab = [[p(etiquetas[a].upper()+':'), p(campos[a]), p(etiquetas[b].upper()+':'), p(campos[b])] for a,b in pares]
+    cab.append([p('ALCANCE:'), p(campos['alcance'] or '-'), '', ''])
+    tabla = Table(cab, colWidths=[90,180,90,180])
+    tabla.setStyle(TableStyle([('GRID',(0,0),(-1,-1),.4,colors.HexColor('#CBD5E1')),
+        ('BACKGROUND',(0,0),(0,-1),colors.HexColor('#F3F4F6')),
+        ('BACKGROUND',(2,0),(2,-2),colors.HexColor('#F3F4F6')),
+        ('SPAN',(1,-1),(3,-1)),('VALIGN',(0,0),(-1,-1),'TOP'),
+        ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
+    story.extend([tabla, Spacer(1,12),
              p("1. CONCLUSIONES", heading), p(campos["conclusiones"] or "Sin información registrada.", body),
-             p("2. RECOMENDACIONES", heading), p(campos["recomendaciones"] or "Sin información registrada.", body)]
-    # Incluir íntegros los datos que se abrevíen en el encabezado repetido.
-    for nombre in CAMPOS:
-        if len(campos[nombre]) > 85:
-            story.append(p(f"{CAMPOS[nombre]}: {campos[nombre]}", body))
+             p("2. RECOMENDACIONES", heading), p(campos["recomendaciones"] or "Sin información registrada.", body)])
     story += [Spacer(1,18), p(f'Solicitante: {campos["solicitante"]}', body),
               p(f'Inspector visual: {campos["inspector"]}', body), p(f'Ingeniero de operaciones: {campos["ingeniero"]}', body),
               p('Destino: Original y copia 1: Enap S.A. - DCEET. Copia 2: Ingemars Ingeniería Ltda.', small), PageBreak(),
