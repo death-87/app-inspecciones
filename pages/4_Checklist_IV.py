@@ -1,11 +1,12 @@
 """Página independiente. Instalar en pages/ junto a app.py.
-Dependencias: streamlit, pandas, reportlab, Pillow.
+Dependencias: streamlit, pandas, reportlab, Pillow, gspread, google-auth, google-api-python-client.
 El respaldo JSON incluye los campos, respuestas y fotografías.
 """
 import base64
 import hashlib
 import io
 import json
+import re
 from datetime import date
 from html import escape
 
@@ -19,6 +20,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 
 PREFIJO = "checklist_iv_"
 VERSION = 1
+SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 GRUPOS = {
     "Inspección externa general": [
         "Presenta placa de identificación", "Acceso al sustrato metálico, estado",
@@ -37,7 +39,81 @@ CAMPOS = {
     "codigo": "Código de evaluación / inspección", "ensayo": "Ensayo complementario",
     "complementario": "N.º informe complementario", "solicitante": "Solicitante",
     "inspector": "Inspector visual", "ingeniero": "Ingeniero de operaciones",
+    "descripcion": "Descripción del equipo", "aca": "ACA",
 }
+
+
+def credenciales_google():
+    from google.oauth2.service_account import Credentials
+    config = dict(st.secrets['connections']['gsheets'])
+    config['private_key'] = config['private_key'].replace('\\n', '\n')
+    return Credentials.from_service_account_info(config, scopes=[
+        'https://www.googleapis.com/auth/spreadsheets.readonly',
+        'https://www.googleapis.com/auth/drive.readonly'])
+
+
+def leer_base_equipos():
+    import gspread
+    filas = gspread.authorize(credenciales_google()).open_by_key(SPREADSHEET_ID).worksheet('BASE EQUIPOS').get_all_values()
+    # Misma distribución de columnas que la página de informe visual.
+    return [{'planta': f[2].strip(), 'equipo': f[3].strip(),
+             'descripcion': f[4].strip() if len(f)>4 else '', 'aca': f[7].strip() if len(f)>7 else ''}
+            for f in filas[1:] if len(f)>3 and f[3].strip()]
+
+
+def preparar_imagen(raw, nombre):
+    if len(raw)>10*1024*1024:
+        raise ValueError(f'{nombre}: máximo 10 MB por imagen.')
+    with Image.open(io.BytesIO(raw)) as im:
+        im = ImageOps.exif_transpose(im).convert('RGB')
+        im.thumbnail((1800,1800))
+        salida = io.BytesIO()
+        im.save(salida, format='JPEG', quality=88)
+    return {'id': hashlib.sha256(raw).hexdigest(),
+            'datos': base64.b64encode(salida.getvalue()).decode(),
+            'leyenda': re.sub(r'^\d+[_ -]*', '', nombre.rsplit('.',1)[0]).replace('_',' ')}
+
+
+def leer_carpeta_drive(enlace):
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaIoBaseDownload
+    match = re.search(r'folders/([A-Za-z0-9_-]+)', enlace)
+    folder = match.group(1) if match else enlace.strip()
+    if not re.fullmatch(r'[A-Za-z0-9_-]+', folder):
+        raise ValueError('Introduce un enlace de carpeta de Drive o su ID.')
+    servicio = build('drive','v3',credentials=credenciales_google())
+    archivos, token = [], None
+    while True:
+        resultado = servicio.files().list(q=f"'{folder}' in parents and trashed = false and (mimeType contains 'image/' or mimeType = 'application/octet-stream')",
+            fields='nextPageToken,files(id,name,size)', pageSize=100, pageToken=token,
+            supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+        archivos.extend(resultado.get('files',[]))
+        token = resultado.get('nextPageToken')
+        if not token:
+            break
+    def orden(f):
+        n = re.match(r'^(\d+)',f['name'])
+        return (int(n.group(1)) if n else 999999, f['name'].lower())
+    fotos, esquemas, avisos = [], [], []
+    for f in sorted(archivos,key=orden):
+        destino = esquemas if 'esquema' in f['name'].lower() else fotos
+        if len(destino)>=20:
+            avisos.append('Se omitió '+f['name']+': máximo 20 por categoría.')
+            continue
+        try:
+            if int(f.get('size',0))>10*1024*1024:
+                raise ValueError('supera 10 MB')
+            buffer = io.BytesIO()
+            descarga = MediaIoBaseDownload(buffer,servicio.files().get_media(fileId=f['id'],supportsAllDrives=True))
+            fin=False
+            while not fin:
+                _,fin=descarga.next_chunk()
+                if buffer.tell()>10*1024*1024:
+                    raise ValueError('supera 10 MB')
+            destino.append(preparar_imagen(buffer.getvalue(),f['name']))
+        except Exception:
+            avisos.append('No se pudo cargar '+f['name']+'. Verifica formato, tamaño y permisos.')
+    return fotos,esquemas,avisos
 
 
 def nuevo():
@@ -47,13 +123,16 @@ def nuevo():
                   fecha_emision=date.today().isoformat(), alcance="", conclusiones="", recomendaciones="")
     return {"version": VERSION, "tipo": "checklist_iv", "campos": campos,
             "grupos": {g: {"observaciones": "", "filas": [{"Punto": p, "Respuesta": "Sin evaluar", "Evaluación": "Sin evaluar", "Observaciones": ""} for p in puntos]} for g, puntos in GRUPOS.items()},
-            "fotos": []}
+            "fotos": [], "esquemas": []}
 
 
 def validar(datos):
     if not isinstance(datos, dict) or datos.get("version") != VERSION or datos.get("tipo") != "checklist_iv":
         raise ValueError("El archivo no corresponde a esta versión del checklist.")
     base = nuevo()
+    datos['campos'].setdefault('descripcion', '')
+    datos['campos'].setdefault('aca', '')
+    datos.setdefault('esquemas', [])
     if set(datos.get("campos", {})) != set(base["campos"]):
         raise ValueError("El respaldo tiene campos incompletos.")
     if not all(isinstance(v, str) and len(v) <= 20000 for v in datos["campos"].values()):
@@ -76,8 +155,10 @@ def validar(datos):
                 raise ValueError("Observación no válida.")
     if not isinstance(datos.get("fotos"), list) or len(datos["fotos"]) > 20:
         raise ValueError("Máximo 20 fotografías.")
+    if not isinstance(datos['esquemas'], list) or len(datos['esquemas'])>20:
+        raise ValueError('Máximo 20 esquemas.')
     ids = set()
-    for foto in datos["fotos"]:
+    for foto in datos["fotos"] + datos['esquemas']:
         if not isinstance(foto.get("id"), str) or not foto["id"] or foto["id"] in ids:
             raise ValueError("Identificador de fotografía no válido o repetido.")
         ids.add(foto["id"])
@@ -100,7 +181,7 @@ def inconsistencias(datos):
     return problemas
 
 
-def revisar_informe(datos):
+def revisar_informe(datos, solo_completados=False):
     errores = []
     for campo in ('numero', 'equipo', 'inspector'):
         if not datos['campos'][campo].strip():
@@ -108,6 +189,8 @@ def revisar_informe(datos):
                             'mensaje': f'Completa {CAMPOS[campo]}.'})
     for grupo, contenido in datos['grupos'].items():
         for fila in contenido['filas']:
+            if solo_completados and fila['Respuesta'] != 'Sí':
+                continue
             mensajes = []
             if (fila['Respuesta'] == 'N/A') != (fila['Evaluación'] == 'N/A'):
                 mensajes.append('Marca N/A en ambas columnas o corrige la que no corresponde.')
@@ -132,8 +215,8 @@ def punto_con_datos(fila):
 def grupos_para_exportar(datos, solo_completados=False):
     resultado = {}
     for grupo, contenido in datos['grupos'].items():
-        filas = [r for r in contenido['filas'] if not solo_completados or punto_con_datos(r)]
-        if filas or contenido['observaciones'].strip() or not solo_completados:
+        filas = [r for r in contenido['filas'] if not solo_completados or r['Respuesta'] == 'Sí']
+        if filas or not solo_completados:
             resultado[grupo] = {'filas': filas, 'observaciones': contenido['observaciones']}
     return resultado
 
@@ -173,7 +256,7 @@ def generar_pdf(datos, solo_completados=False):
         canvas.drawString(36, 23, "Este informe no debe ser reproducido salvo en su totalidad.")
         canvas.drawRightString(576, 23, f"Página {documento.page}")
         canvas.restoreState()
-    story = [p("ALCANCE", heading), p(campos["alcance"] or "Sin información registrada.", body),
+    story = [p(f'Descripción: {campos["descripcion"]} · ACA: {campos["aca"]}', body), p("ALCANCE", heading), p(campos["alcance"] or "Sin información registrada.", body),
              p("1. CONCLUSIONES", heading), p(campos["conclusiones"] or "Sin información registrada.", body),
              p("2. RECOMENDACIONES", heading), p(campos["recomendaciones"] or "Sin información registrada.", body)]
     # Incluir íntegros los datos que se abrevíen en el encabezado repetido.
@@ -214,6 +297,12 @@ def generar_pdf(datos, solo_completados=False):
             tabla = Table([[celdas[pos], celdas[pos+1] if pos+1<len(celdas) else '']], colWidths=[270,270])
             tabla.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),('BOX',(0,0),(-1,-1),.4,colors.lightgrey),('BOTTOMPADDING',(0,0),(-1,-1),12)]))
             story.append(tabla)
+    for n,esquema in enumerate(datos['esquemas'],start=1):
+        story.extend([PageBreak(),p('5. ESQUEMAS',heading)])
+        img=PDFImage(io.BytesIO(base64.b64decode(esquema['datos'])))
+        factor=min(520/img.imageWidth,440/img.imageHeight)
+        img.drawWidth,img.drawHeight=img.imageWidth*factor,img.imageHeight*factor
+        story.extend([img,p(f'Esquema {n}: {esquema["leyenda"]}',body)])
     doc.build(story, onFirstPage=marco, onLaterPages=marco)
     return buffer.getvalue()
 
@@ -239,6 +328,9 @@ def main():
         st.session_state[key('revision_activa')] = False
         st.rerun()
     datos = st.session_state[key('datos')]
+    datos.setdefault('esquemas', [])
+    datos['campos'].setdefault('descripcion','')
+    datos['campos'].setdefault('aca','')
     st.title('Informe visual tipo checklist')
     st.caption('Página independiente · En desarrollo · Basada en el formato de piping y equipos')
     st.info('Esta versión guarda durante la sesión. Descarga un respaldo editable para conservar campos y fotos; no escribe en Google Sheets.')
@@ -266,6 +358,22 @@ def main():
     tabs = st.tabs(['Identificación', '1. Conclusiones / 2. Recomendaciones', '3. Checklist', '4. Fotografías', 'Exportar'])
     campos = datos['campos']
     with tabs[0]:
+        if st.button('Cargar / actualizar BASE EQUIPOS',key=widget('base')):
+            try:
+                st.session_state[key('equipos')] = leer_base_equipos()
+            except Exception:
+                st.error('No se pudo leer BASE EQUIPOS. Revisa las credenciales y el acceso al documento de Google Sheets.')
+        equipos=st.session_state.get(key('equipos'),[])
+        if equipos:
+            def aplicar_tag():
+                indice=st.session_state.get(widget('tag_selector'))
+                if indice is not None:
+                    for campo,valor in equipos[indice].items():
+                        campos[campo]=valor
+                        st.session_state[widget(campo)]=valor
+            st.selectbox('Elegir TAG de BASE EQUIPOS',range(len(equipos)),index=None,
+                format_func=lambda i: f'{equipos[i]["equipo"]} · {equipos[i]["planta"]} · {equipos[i]["descripcion"]}',
+                key=widget('tag_selector'),on_change=aplicar_tag)
         columnas = st.columns(3)
         for n,(campo, etiqueta) in enumerate(CAMPOS.items()):
             campos[campo] = columnas[n%3].text_input(etiqueta, value=campos[campo], key=widget(campo))
@@ -298,6 +406,27 @@ def main():
                     contenido['observaciones'] = st.text_area('Observaciones del grupo', value=contenido['observaciones'], key=widget(f'obs_{n}'))
                     avisos_grupos[grupo] = st.empty()
     with tabs[3]:
+        st.caption('Drive: los archivos cuyo nombre contiene “esquema” se muestran aparte. Las fotos existentes se conservan y no se duplican.')
+        enlace=st.text_input('Enlace o ID de carpeta de Google Drive',key=widget('drive'))
+        if st.button('Cargar fotografías y esquemas de Drive',key=widget('cargar_drive')):
+            try:
+                with st.spinner('Descargando archivos de Google Drive...'):
+                    fotos_drive,esquemas_drive,avisos=leer_carpeta_drive(enlace)
+                conocidos={f['id'] for f in datos['fotos']+datos['esquemas']}
+                for categoria,nuevas in [('fotos',fotos_drive),('esquemas',esquemas_drive)]:
+                    for imagen in nuevas:
+                        if imagen['id'] in conocidos:
+                            continue
+                        if len(datos[categoria])>=20:
+                            avisos.append(f'Máximo 20 {categoria}; no se agregó {imagen["leyenda"]}.')
+                            continue
+                        datos[categoria].append(imagen)
+                        conocidos.add(imagen['id'])
+                for aviso in avisos:
+                    st.warning(aviso)
+                st.success(f'Carga finalizada. Total: {len(datos["fotos"])} fotos y {len(datos["esquemas"])} esquemas.')
+            except Exception:
+                st.error('No se pudo cargar la carpeta. Revisa el enlace y que esté compartida con la cuenta de servicio de la aplicación.')
         archivos = st.file_uploader('Fotografías JPG o PNG (máximo 20)', type=['jpg','jpeg','png'], accept_multiple_files=True, key=widget('fotos'))
         if st.button('Agregar fotografías', key=widget('agregar')):
             try:
@@ -321,13 +450,21 @@ def main():
                 datos['fotos'].extend(nuevas)
             except Exception as exc:
                 st.error(f'No se agregaron fotografías: {exc}')
+        columnas_fotos=st.columns(3)
         for n,foto in enumerate(datos['fotos']):
-            with st.expander(f'Imagen {n+1}', expanded=False):
-                st.image(base64.b64decode(foto['datos']), width=300)
+            with columnas_fotos[n%3]:
+                st.image(base64.b64decode(foto['datos']), caption=f'Foto {n+1}', use_container_width=True)
                 foto['leyenda'] = st.text_input('Leyenda', value=foto['leyenda'], key=widget('leyenda_'+foto['id']))
                 if st.button('Quitar fotografía', key=widget('quitar_'+foto['id'])):
                     datos['fotos'].pop(n)
                     st.rerun()
+        st.subheader('Esquemas')
+        for n,esquema in enumerate(datos['esquemas']):
+            st.image(base64.b64decode(esquema['datos']),use_container_width=True)
+            esquema['leyenda']=st.text_input(f'Leyenda del esquema {n+1}',value=esquema['leyenda'],key=widget('esquema_'+esquema['id']))
+            if st.button('Quitar esquema',key=widget('quitar_esquema_'+esquema['id'])):
+                datos['esquemas'].pop(n)
+                st.rerun()
     with tabs[4]:
         respaldo = json.dumps(datos, ensure_ascii=False, indent=2).encode('utf-8')
         huella = hashlib.sha256(respaldo).hexdigest()
@@ -335,9 +472,9 @@ def main():
         modo = st.radio('Contenido del PDF', ['Checklist completo', 'Solo puntos completados'], key=widget('modo_exportacion'))
         solo_completados = modo == 'Solo puntos completados'
         llenos = sum(punto_con_datos(r) for g in datos['grupos'].values() for r in g['filas'])
-        st.caption(f'{llenos} de 28 puntos tienen datos. Solo puntos completados incluye cualquier punto con una respuesta, evaluación u observación. Los puntos vacíos se omiten; las observaciones de grupo se conservan.')
+        st.caption('Solo puntos completados incluye exclusivamente respuestas Sí. No, N/A y Sin evaluar se omiten, aunque tengan observaciones. Checklist completo muestra todos los puntos. Las observaciones de grupo aparecen solo en grupos incluidos.')
         if st.button('Preparar PDF', type='primary', key=widget('preparar')):
-            errores = revisar_informe(datos)
+            errores = revisar_informe(datos, solo_completados)
             st.session_state[key('revision_activa')] = True
             revision_activa = True
             if errores:
@@ -357,7 +494,7 @@ def main():
 
     # Evaluar después de leer todos los controles para mostrar el estado actual.
     if revision_activa:
-        errores = revisar_informe(datos)
+        errores = revisar_informe(datos, solo_completados)
         if errores:
             with resumen_revision.container():
                 st.error(f'{len(errores)} errores que impiden exportar. Abre la pestaña indicada y corrige los puntos señalados.')
