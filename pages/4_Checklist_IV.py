@@ -84,6 +84,22 @@ def preparar_imagen(raw, nombre):
             'leyenda': re.sub(r'^\d+[_ -]*', '', nombre.rsplit('.',1)[0]).replace('_',' ')}
 
 
+def cargar_logo_pdf(nombre):
+    raiz = Path(__file__).resolve().parent.parent
+    ruta = raiz / nombre
+    if ruta.is_file():
+        contenido = ruta.read_bytes()
+    else:
+        import requests
+        respuesta = requests.get(
+            f'https://raw.githubusercontent.com/death-87/app-inspecciones/main/{nombre}', timeout=10)
+        respuesta.raise_for_status()
+        contenido = respuesta.content
+    with Image.open(io.BytesIO(contenido)) as imagen:
+        imagen.verify()
+    return contenido
+
+
 def leer_carpeta_drive(enlace):
     from googleapiclient.discovery import build
     from googleapiclient.http import MediaIoBaseDownload
@@ -235,7 +251,7 @@ def generar_pdf(datos, solo_completados=False):
     validar(datos)
     campos = datos["campos"]
     buffer = io.BytesIO()
-    doc = BaseDocTemplate(buffer, pagesize=letter, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=40)
+    doc = BaseDocTemplate(buffer, pagesize=letter, leftMargin=36, rightMargin=36, topMargin=24, bottomMargin=40)
     styles = getSampleStyleSheet()
     body = ParagraphStyle("texto", parent=styles["Normal"], fontSize=9, leading=12, spaceAfter=5)
     small = ParagraphStyle("celda", parent=body, fontSize=7, leading=9, spaceAfter=0)
@@ -272,20 +288,29 @@ def generar_pdf(datos, solo_completados=False):
         canvas.restoreState()
     inicio_cuerpo = 40 + alto_recuadro + 8
     doc.addPageTemplates([
-        PageTemplate(id='primera', frames=[Frame(36,inicio_cuerpo,540,756-inicio_cuerpo,id='cuerpo_primera')],onPage=marco,autoNextPageTemplate='desarrollo'),
+        PageTemplate(id='primera', frames=[Frame(36,inicio_cuerpo,540,768-inicio_cuerpo,id='cuerpo_primera',topPadding=0)],onPage=marco,autoNextPageTemplate='desarrollo'),
         PageTemplate(id='desarrollo',frames=[Frame(36,40,540,716,id='cuerpo_desarrollo')],onPage=marco),
     ])
     # Identificación como contenido inicial, nunca como encabezado repetido.
     story = []
-    logo = ''
-    ruta_logo = Path(__file__).resolve().parent.parent / 'logo.png'
-    if ruta_logo.is_file():
-        logo = PDFImage(str(ruta_logo))
-        escala = min(105/logo.imageWidth, 30/logo.imageHeight)
-        logo.drawWidth, logo.drawHeight = logo.imageWidth*escala, logo.imageHeight*escala
-        logo.hAlign = 'RIGHT'
-    cabecera_titulo = Table([[[p('INFORME DE INSPECCIÓN VISUAL',titulo),p('CHECKLIST DE CIRCUITOS Y COMPONENTES',centrado)], logo]], colWidths=[420,120])
-    cabecera_titulo.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('TOPPADDING',(0,0),(-1,-1),0),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
+    def logo_ajustado(nombre, ancho, alto):
+        try:
+            logo = PDFImage(io.BytesIO(cargar_logo_pdf(nombre)), mask='auto')
+            escala = min(ancho/logo.imageWidth, alto/logo.imageHeight)
+            logo.drawWidth, logo.drawHeight = logo.imageWidth*escala, logo.imageHeight*escala
+            return logo
+        except Exception as exc:
+            raise ValueError(f'No se pudo cargar {nombre}. Verifica que esté en la raíz del repositorio.') from exc
+    logo_izquierdo = logo_ajustado('logo.png', 96, 40)
+    logo_derecho = logo_ajustado('logoenap.png', 48, 42)
+    logo_izquierdo.hAlign = 'LEFT'
+    logo_derecho.hAlign = 'RIGHT'
+    cabecera_titulo = Table([[logo_izquierdo,
+        [p('INFORME DE INSPECCIÓN VISUAL',titulo),p('CHECKLIST DE CIRCUITOS Y COMPONENTES',centrado)],
+        logo_derecho]], colWidths=[102,336,102])
+    cabecera_titulo.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0),
+        ('TOPPADDING',(0,0),(-1,-1),0),('BOTTOMPADDING',(0,0),(-1,-1),4)]))
     story.append(cabecera_titulo)
     pares = [('numero','ot'),('contrato','cliente'),('fecha_inspeccion','fecha_emision'),
              ('planta','equipo'),('descripcion','aca'),('procedimiento','codigo'),('ensayo','complementario')]
