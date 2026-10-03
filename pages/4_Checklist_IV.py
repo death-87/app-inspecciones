@@ -17,10 +17,11 @@ from PIL import Image, ImageOps
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image as PDFImage
+from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image as PDFImage
 
 PREFIJO = "checklist_iv_"
 VERSION = 1
+INSPECTORES = ['Juan Navarrete', 'Jorge Hernández', 'Harold Castillo', 'Miguel Chirinos', 'Arlem Sarmiento']
 SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 GRUPOS = {
     "Inspección externa general": [
@@ -128,7 +129,7 @@ def leer_carpeta_drive(enlace):
 def nuevo():
     campos = {k: "" for k in CAMPOS}
     campos.update(contrato="AC31104857", cliente="Enap Refinerías Aconcagua S.A.",
-                  codigo="API 510 / 572 / ASME VIII", fecha_inspeccion=date.today().isoformat(),
+                  codigo="API 510 / 572 / ASME VIII", ingeniero="Gabriel Allendes V.", fecha_inspeccion=date.today().isoformat(),
                   fecha_emision=date.today().isoformat(), alcance="", conclusiones="", recomendaciones="")
     return {"version": VERSION, "tipo": "checklist_iv", "campos": campos,
             "grupos": {g: {"observaciones": "", "filas": [{"Punto": p, "Respuesta": "Sin evaluar", "Evaluación": "Sin evaluar", "Observaciones": ""} for p in puntos]} for g, puntos in GRUPOS.items()},
@@ -234,7 +235,7 @@ def generar_pdf(datos, solo_completados=False):
     validar(datos)
     campos = datos["campos"]
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=40)
+    doc = BaseDocTemplate(buffer, pagesize=letter, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=40)
     styles = getSampleStyleSheet()
     body = ParagraphStyle("texto", parent=styles["Normal"], fontSize=9, leading=12, spaceAfter=5)
     small = ParagraphStyle("celda", parent=body, fontSize=7, leading=9, spaceAfter=0)
@@ -242,13 +243,36 @@ def generar_pdf(datos, solo_completados=False):
     titulo = ParagraphStyle('titulo_informe', parent=heading, fontSize=15, leading=18, alignment=1, spaceAfter=10)
     def p(texto, style=small):
         return Paragraph(escape(str(texto)).replace("\n", "<br/>"), style)
+    centrado = ParagraphStyle('responsable', parent=small, alignment=1)
+    recuadro = Table([
+        [p('Solicitante: '+campos['solicitante']), '', ''],
+        [p('Destino\nOriginal: Enap S.A. - DCEET\nCopia 1: Enap S.A. - DCEET\nCopia 2: Ingemars Ingeniería Ltda.'), p(campos['inspector'],centrado), p(campos['ingeniero'],centrado)],
+        ['', p('Inspector visual',centrado), p('Ingeniero de operaciones',centrado)],
+    ], colWidths=[180,180,180])
+    recuadro.setStyle(TableStyle([
+        ('SPAN',(0,0),(2,0)),('SPAN',(0,1),(0,2)),
+        ('GRID',(0,0),(-1,-1),.5,colors.HexColor('#94A3B8')),
+        ('VALIGN',(0,0),(-1,-1),'BOTTOM'),
+        ('BACKGROUND',(1,2),(2,2),colors.HexColor('#F3F4F6')),
+        ('TOPPADDING',(1,1),(2,1),26),('BOTTOMPADDING',(0,0),(-1,-1),6),
+    ]))
+    _,alto_recuadro = recuadro.wrap(540,700)
+    if alto_recuadro>200:
+        raise ValueError('Los nombres o el solicitante son demasiado extensos para el recuadro de responsables.')
     def marco(canvas, documento):
         canvas.saveState()
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(colors.HexColor("#526579"))
         canvas.drawString(36, 23, "Este informe no debe ser reproducido salvo en su totalidad.")
         canvas.drawRightString(576, 23, f"Página {documento.page}")
+        if documento.page == 1:
+            recuadro.drawOn(canvas,36,40)
         canvas.restoreState()
+    inicio_cuerpo = 40 + alto_recuadro + 14
+    doc.addPageTemplates([
+        PageTemplate(id='primera', frames=[Frame(36,inicio_cuerpo,540,756-inicio_cuerpo,id='cuerpo_primera')],onPage=marco,autoNextPageTemplate='desarrollo'),
+        PageTemplate(id='desarrollo',frames=[Frame(36,40,540,716,id='cuerpo_desarrollo')],onPage=marco),
+    ])
     # Identificación como contenido inicial, nunca como encabezado repetido.
     story = []
     ruta_logo = Path(__file__).resolve().parent.parent / 'logo.png'
@@ -273,9 +297,7 @@ def generar_pdf(datos, solo_completados=False):
     story.extend([tabla, Spacer(1,12),
              p("1. CONCLUSIONES", heading), p(campos["conclusiones"] or "Sin información registrada.", body),
              p("2. RECOMENDACIONES", heading), p(campos["recomendaciones"] or "Sin información registrada.", body)])
-    story += [Spacer(1,18), p(f'Solicitante: {campos["solicitante"]}', body),
-              p(f'Inspector visual: {campos["inspector"]}', body), p(f'Ingeniero de operaciones: {campos["ingeniero"]}', body),
-              p('Destino: Original y copia 1: Enap S.A. - DCEET. Copia 2: Ingemars Ingeniería Ltda.', small), PageBreak(),
+    story += [PageBreak(),
               p('3. DESARROLLO CHECK LIST', heading), p('N/A: No aplica · C: Conforme · NC: No conforme. Sin evaluar: celdas vacías.', small)]
     grupos_exportados = grupos_para_exportar(datos, solo_completados)
     if not grupos_exportados:
@@ -313,7 +335,7 @@ def generar_pdf(datos, solo_completados=False):
         factor=min(520/img.imageWidth,440/img.imageHeight)
         img.drawWidth,img.drawHeight=img.imageWidth*factor,img.imageHeight*factor
         story.extend([img,p(f'Esquema {n}: {esquema["leyenda"]}',body)])
-    doc.build(story, onFirstPage=marco, onLaterPages=marco)
+    doc.build(story)
     return buffer.getvalue()
 
 
@@ -393,7 +415,8 @@ def main():
             else:
                 st.session_state.pop(widget('ultimo_equipo_aplicado'), None)
         columnas = st.columns(3)
-        for n,(campo, etiqueta) in enumerate(CAMPOS.items()):
+        campos_identificacion = [(c,e) for c,e in CAMPOS.items() if c not in ('inspector','ingeniero')]
+        for n,(campo, etiqueta) in enumerate(campos_identificacion):
             if widget(campo) not in st.session_state:
                 st.session_state[widget(campo)] = campos[campo]
             campos[campo] = columnas[n%3].text_input(etiqueta, key=widget(campo))
@@ -404,8 +427,19 @@ def main():
         campos['fecha_emision'] = b.date_input('Fecha de emisión', date.fromisoformat(campos['fecha_emision']), key=widget('fecha_emision')).isoformat()
         campos['alcance'] = st.text_area('Alcance', value=campos['alcance'], key=widget('alcance'))
     with tabs[1]:
-        campos['conclusiones'] = st.text_area('1. Conclusiones', value=campos['conclusiones'], height=200, key=widget('conclusiones'))
-        campos['recomendaciones'] = st.text_area('2. Recomendaciones', value=campos['recomendaciones'], height=200, key=widget('recomendaciones'))
+        campos['conclusiones'] = st.text_area('1. Conclusiones', value=campos['conclusiones'], height='content', key=widget('conclusiones'))
+        campos['recomendaciones'] = st.text_area('2. Recomendaciones', value=campos['recomendaciones'], height='content', key=widget('recomendaciones'))
+        st.subheader('Responsables del informe')
+        st.caption('Estos nombres aparecerán en el recuadro inferior de la primera página del PDF.')
+        nombre_actual = campos['inspector']
+        if nombre_actual == 'Jorge Hernandez':
+            nombre_actual = 'Jorge Hernández'
+        opciones = ['']+INSPECTORES
+        if nombre_actual and nombre_actual not in opciones:
+            opciones.append(nombre_actual)
+        campos['inspector'] = st.selectbox('Inspector visual', opciones, index=opciones.index(nombre_actual), key=widget('responsable_inspector'))
+        avisos_campos['inspector'] = st.empty()
+        campos['ingeniero'] = st.text_input('Ingeniero de operaciones', value=campos['ingeniero'], placeholder='Gabriel Allendes V.', key=widget('responsable_ingeniero'))
     with tabs[2]:
         st.caption('Respuesta: Sí / No / N/A. Evaluación: C / NC / N/A. Sí no significa Conforme: describe la presencia del aspecto consultado. Nada se marca automáticamente.')
         for n,(grupo, contenido) in enumerate(datos['grupos'].items()):
@@ -519,7 +553,8 @@ def main():
             with resumen_revision.container():
                 st.error(f'{len(errores)} errores que impiden exportar. Abre la pestaña indicada y corrige los puntos señalados.')
                 for error in errores:
-                    st.write(f'• {error["seccion"]} → {error["mensaje"]}')
+                    ubicacion = 'Conclusiones / Recomendaciones → Responsables' if error['campo']=='inspector' else error['seccion']
+                    st.write(f'• {ubicacion} → {error["mensaje"]}')
         else:
             resumen_revision.success('Revisión correcta: no hay errores de validación que impidan preparar el PDF.')
         estilos_errores = []
