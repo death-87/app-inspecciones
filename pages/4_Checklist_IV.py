@@ -61,6 +61,14 @@ def leer_base_equipos():
             for f in filas[1:] if len(f)>3 and f[3].strip()]
 
 
+def aplicar_equipo_formulario(estado, campos, equipo, revision):
+    for campo in ('planta', 'equipo', 'descripcion', 'aca'):
+        valor = str(equipo.get(campo, '') or '')
+        campos[campo] = valor
+        estado[f'{PREFIJO}{revision}_{campo}'] = valor
+    estado.pop(PREFIJO+'pdf', None)
+
+
 def preparar_imagen(raw, nombre):
     if len(raw)>10*1024*1024:
         raise ValueError(f'{nombre}: máximo 10 MB por imagen.')
@@ -365,18 +373,28 @@ def main():
                 st.error('No se pudo leer BASE EQUIPOS. Revisa las credenciales y el acceso al documento de Google Sheets.')
         equipos=st.session_state.get(key('equipos'),[])
         if equipos:
-            def aplicar_tag():
-                indice=st.session_state.get(widget('tag_selector'))
-                if indice is not None:
-                    for campo,valor in equipos[indice].items():
-                        campos[campo]=valor
-                        st.session_state[widget(campo)]=valor
-            st.selectbox('Elegir TAG de BASE EQUIPOS',range(len(equipos)),index=None,
+            indice = st.selectbox('Elegir TAG de BASE EQUIPOS',range(len(equipos)),index=None,
                 format_func=lambda i: f'{equipos[i]["equipo"]} · {equipos[i]["planta"]} · {equipos[i]["descripcion"]}',
-                key=widget('tag_selector'),on_change=aplicar_tag)
+                key=widget('tag_selector'))
+            reaplicar = st.button('Aplicar datos del equipo', disabled=indice is None, key=widget('aplicar_tag'))
+            if indice is not None:
+                seleccionado = equipos[indice]
+                firma = json.dumps(seleccionado, sort_keys=True, ensure_ascii=False)
+                if firma != st.session_state.get(widget('ultimo_equipo_aplicado')) or reaplicar:
+                    # Aplicar antes de construir los campos en esta ejecución.
+                    aplicar_equipo_formulario(st.session_state, campos, seleccionado, revision)
+                    st.session_state[widget('ultimo_equipo_aplicado')] = firma
+                    st.success('Datos del equipo aplicados: TAG, planta, descripción y ACA.')
+                    vacios = [CAMPOS[c] for c in ('planta','descripcion','aca') if not campos[c].strip()]
+                    if vacios:
+                        st.info('Sin dato en BASE EQUIPOS: '+', '.join(vacios)+'. Puedes completarlo manualmente.')
+            else:
+                st.session_state.pop(widget('ultimo_equipo_aplicado'), None)
         columnas = st.columns(3)
         for n,(campo, etiqueta) in enumerate(CAMPOS.items()):
-            campos[campo] = columnas[n%3].text_input(etiqueta, value=campos[campo], key=widget(campo))
+            if widget(campo) not in st.session_state:
+                st.session_state[widget(campo)] = campos[campo]
+            campos[campo] = columnas[n%3].text_input(etiqueta, key=widget(campo))
             avisos_campos[campo] = columnas[n%3].empty()
         st.caption('El código proviene del modelo adjunto: confírmalo según el equipo y alcance del informe.')
         a,b = st.columns(2)
