@@ -110,8 +110,8 @@ def leer_carpeta_drive(enlace):
     servicio = build('drive','v3',credentials=credenciales_google())
     archivos, token = [], None
     while True:
-        resultado = servicio.files().list(q=f"'{folder}' in parents and trashed = false and (mimeType contains 'image/' or mimeType = 'application/octet-stream')",
-            fields='nextPageToken,files(id,name,size)', pageSize=100, pageToken=token,
+        resultado = servicio.files().list(q=f"'{folder}' in parents and trashed = false",
+            fields='nextPageToken,files(id,name,size,mimeType)', pageSize=100, pageToken=token,
             supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
         archivos.extend(resultado.get('files',[]))
         token = resultado.get('nextPageToken')
@@ -121,7 +121,19 @@ def leer_carpeta_drive(enlace):
         n = re.match(r'^(\d+)',f['name'])
         return (int(n.group(1)) if n else 999999, f['name'].lower())
     fotos, esquemas, avisos = [], [], []
+    avisos.append(f'Drive: se encontraron {len(archivos)} archivos directamente en la carpeta.')
     for f in sorted(archivos,key=orden):
+        tipo = f.get('mimeType', '')
+        if tipo == 'application/vnd.google-apps.folder':
+            avisos.append(f'{f["name"]}: es una subcarpeta. Usa su enlace para cargar sus fotos.')
+            continue
+        if tipo == 'application/vnd.google-apps.shortcut':
+            avisos.append(f'{f["name"]}: es un acceso directo. Carga la imagen desde su carpeta original.')
+            continue
+        extension = Path(f['name']).suffix.lower()
+        if tipo and not tipo.startswith('image/') and tipo != 'application/octet-stream' and extension not in ('.jpg','.jpeg','.png','.webp','.bmp','.tif','.tiff','.heic','.heif'):
+            avisos.append(f'{f["name"]}: se omitió porque no es una imagen.')
+            continue
         destino = esquemas if 'esquema' in f['name'].lower() else fotos
         if len(destino)>=20:
             avisos.append('Se omitió '+f['name']+': máximo 20 por categoría.')
@@ -137,8 +149,16 @@ def leer_carpeta_drive(enlace):
                 if buffer.tell()>10*1024*1024:
                     raise ValueError('supera 10 MB')
             destino.append(preparar_imagen(buffer.getvalue(),f['name']))
-        except Exception:
-            avisos.append('No se pudo cargar '+f['name']+'. Verifica formato, tamaño y permisos.')
+        except Exception as exc:
+            if isinstance(exc, ValueError) and '10 MB' in str(exc):
+                motivo = 'supera el límite de 10 MB por imagen'
+            elif isinstance(exc, Image.UnidentifiedImageError):
+                motivo = 'formato no compatible; convierte la imagen a JPG o PNG'
+            elif getattr(getattr(exc, 'resp', None), 'status', None) in (403,404):
+                motivo = 'la cuenta de servicio no tiene acceso a descargar este archivo'
+            else:
+                motivo = 'falló la descarga o lectura; revisa el archivo y vuelve a intentar'
+            avisos.append(f'No se pudo cargar {f["name"]}: {motivo}.')
     return fotos,esquemas,avisos
 
 
@@ -515,6 +535,7 @@ def main():
                 for categoria,nuevas in [('fotos',fotos_drive),('esquemas',esquemas_drive)]:
                     for imagen in nuevas:
                         if imagen['id'] in conocidos:
+                            avisos.append(f'{imagen["leyenda"]}: no se agregó porque su contenido ya está cargado (duplicado).')
                             continue
                         if len(datos[categoria])>=20:
                             avisos.append(f'Máximo 20 {categoria}; no se agregó {imagen["leyenda"]}.')
