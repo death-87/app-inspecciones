@@ -130,6 +130,43 @@ CATALOGO_COMPONENTES = {
 }
 
 
+COLORES_COMPONENTES = {
+    "TAPA DE CHANNEL": ("#F0F6FF", "#DCEAFE", "#245A91"),
+    "CHANNEL": ("#EFF9F6", "#D4EEE5", "#246653"),
+    "CARCASA": ("#FFF8EC", "#F7E7C7", "#795820"),
+    "BONETE": ("#F6F1FC", "#E8DCF6", "#68418C"),
+    "SOPORTACIONES": ("#EDF8FA", "#D2EDF0", "#286570"),
+    "PERNOS DE ANCLAJE": ("#FFF3EB", "#F7DFCC", "#86502E"),
+    "VÁLVULAS DE SEGURIDAD": ("#F4F7EA", "#E5EBCE", "#56662C"),
+    "PLACA DE CARACTERÍSTICAS": ("#F1F4F8", "#DEE5EE", "#485B74"),
+    "CONEXIÓN A TIERRA": ("#F7F3EC", "#EAE1D1", "#6B5940"),
+    "INSTRUMENTACIÓN": ("#F1F2FD", "#DFE2F8", "#4C568D"),
+}
+
+
+def estilo_panel_componente(nombre):
+    # Clave estable: el color no cambia al seleccionar o quitar otro componente.
+    identificador = hashlib.sha256(nombre.encode("utf-8")).hexdigest()[:12]
+    clave = clave_informe(f"panel_componente_{identificador}")
+    fondo, seleccion, acento = COLORES_COMPONENTES[nombre]
+    selector = f".st-key-{clave}"
+    st.markdown(f"""<style>
+    {selector} {{
+        background-color: {fondo}; border: 1px solid {seleccion};
+        border-left: 5px solid {acento}; border-radius: 12px;
+        padding: 16px; margin: 8px 0 18px;
+    }}
+    {selector} h5 {{ color: {acento} !important; margin-bottom: .5rem; }}
+    {selector} [data-testid="stWidgetLabel"] p {{ color: #243447 !important; }}
+    {selector} [data-baseweb="select"] > div {{ background-color: #FFFFFF !important; color: #243447 !important; }}
+    {selector} [data-baseweb="tag"] {{ background-color: {seleccion} !important; color: {acento} !important; border: 1px solid {acento} !important; }}
+    {selector} [data-baseweb="tag"] span {{ color: {acento} !important; }}
+    {selector} [data-baseweb="tag"] svg {{ color: {acento} !important; fill: currentColor; }}
+    {selector} textarea {{ background-color: #FFFFFF !important; color: #243447 !important; caret-color: {acento}; }}
+    </style>""", unsafe_allow_html=True)
+    return clave
+
+
 def construir_componentes(modelo, inicio=1):
     """Solo exportar componentes y puntos elegidos; no inferir condiciones."""
     resultado = []
@@ -368,8 +405,8 @@ def obtener_imagenes_desde_drive_folder(folder_input):
         files_fotos = [f for f in files if "esquema" not in f['name'].lower()]
         files_esquemas = [f for f in files if "esquema" in f['name'].lower()]
 
-        files_fotos_ordenados = sorted(files_fotos, key=clave_informe(lambda f: obtener_numero_archivo(f['name'])))
-        files_esquemas_ordenados = sorted(files_esquemas, key=clave_informe(lambda f: obtener_numero_archivo(f['name'])))
+        files_fotos_ordenados = sorted(files_fotos, key=lambda f: obtener_numero_archivo(f['name']))
+        files_esquemas_ordenados = sorted(files_esquemas, key=lambda f: obtener_numero_archivo(f['name']))
 
         for index, file in enumerate(files_fotos_ordenados):
             request = drive_service.files().get_media(fileId=file['id'])
@@ -1303,7 +1340,8 @@ for num_sec, tit_sec in secciones_base.items():
             for nombre in componentes:
                 grupos_previos = modelo_anterior.get(nombre, {})
                 grupos_actuales = {}
-                with st.container():
+                clave_panel = estilo_panel_componente(nombre)
+                with st.container(key=clave_panel):
                     st.markdown(f"##### {nombre}")
                     for grupo, opciones in CATALOGO_COMPONENTES[nombre].items():
                         anteriores = grupos_previos.get(grupo, {})
