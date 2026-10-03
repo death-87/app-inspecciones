@@ -245,16 +245,18 @@ def generar_pdf(datos, solo_completados=False):
         return Paragraph(escape(str(texto)).replace("\n", "<br/>"), style)
     centrado = ParagraphStyle('responsable', parent=small, alignment=1)
     recuadro = Table([
-        [p(campos['solicitante'],centrado), p(campos['inspector'],centrado), p(campos['ingeniero'],centrado)],
-        [p('Solicitante',centrado), p('Inspector visual',centrado), p('Ingeniero de operaciones',centrado)],
-        [p('Destino: Original y copia 1: Enap S.A. - DCEET. Copia 2: Ingemars Ingeniería Ltda.'), '', ''],
-    ], colWidths=[180,180,180])
+        [p('DESTINO'), p(campos['solicitante'],centrado), p(campos['inspector'],centrado), p(campos['ingeniero'],centrado)],
+        [p('Original: Enap S.A.'), '', '', ''],
+        [p('Copia 1: DCEET'), '', '', ''],
+        [p('Copia 2: Ingemars Ingeniería Ltda.'), p('Solicitante',centrado), p('Inspector visual',centrado), p('Ingeniero de operaciones',centrado)],
+    ], colWidths=[156,128,128,128])
     recuadro.setStyle(TableStyle([
-        ('SPAN',(0,2),(2,2)),
+        ('SPAN',(1,0),(1,2)),('SPAN',(2,0),(2,2)),('SPAN',(3,0),(3,2)),
         ('GRID',(0,0),(-1,-1),.5,colors.HexColor('#94A3B8')),
         ('VALIGN',(0,0),(-1,-1),'BOTTOM'),
-        ('BACKGROUND',(0,1),(2,1),colors.HexColor('#F3F4F6')),
-        ('TOPPADDING',(0,0),(2,0),14),('BOTTOMPADDING',(0,0),(-1,-1),3),
+        ('BACKGROUND',(0,0),(0,0),colors.HexColor('#F3F4F6')),
+        ('BACKGROUND',(1,3),(3,3),colors.HexColor('#F3F4F6')),
+        ('TOPPADDING',(0,0),(-1,-1),2),('BOTTOMPADDING',(0,0),(-1,-1),2),
     ]))
     _,alto_recuadro = recuadro.wrap(540,700)
     if alto_recuadro>200:
