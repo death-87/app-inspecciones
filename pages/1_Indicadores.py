@@ -138,6 +138,59 @@ def estilo(fig, height=310):
     return fig
 
 
+
+def calcular_pendientes(filas):
+    """Última fila ingresada por planta y TAG, igual que Continuar actividad."""
+    columnas = ['planta', 'tag_equipo', 'inspector', 'fecha', 'estado_liberacion', 'actividad_realizada']
+    if not filas:
+        return pd.DataFrame(columns=columnas + ['Situación'])
+    encabezados = [str(c).strip().lower() for c in filas[0]]
+    if not set(columnas).issubset(encabezados):
+        raise ValueError('La primera pestaña no contiene las columnas del historial de actividades.')
+    datos = pd.DataFrame([f[:len(encabezados)] + [''] * max(0, len(encabezados)-len(f)) for f in filas[1:]], columns=encabezados)
+    for c in columnas:
+        datos[c] = datos[c].astype(str).str.strip()
+    datos['tag_equipo'] = datos['tag_equipo'].str.upper()
+    datos = datos[datos['tag_equipo'].ne('')].copy()
+    datos['_planta'] = datos['planta'].str.upper()
+    datos = datos.drop_duplicates(['_planta', 'tag_equipo'], keep='last')
+    estados = {
+        'proceso de inspección': 'Pendiente de inspección',
+        'en proceso de inspección': 'Pendiente de inspección',
+        'proceso de informe': 'Pendiente de informe',
+        'finalizada': 'Finalizada',
+    }
+    datos['Situación'] = datos['estado_liberacion'].str.casefold().map(estados).fillna('Estado por revisar')
+    return datos[columnas + ['Situación']].reset_index(drop=True)
+
+
+def mostrar_pendientes(libro):
+    st.subheader('Pendientes actuales')
+    st.caption('Origen: primera pestaña de actividades. Última fila ingresada por planta y TAG. Incluye pendientes de semanas anteriores; no depende del filtro semanal de KPIs.')
+    try:
+        pendientes = calcular_pendientes(libro.sheet1.get_all_values())
+    except Exception:
+        st.error('No se pudieron leer los pendientes. Verifica acceso y columnas de la primera pestaña de actividades.')
+        return
+    plantas = sorted(pendientes['planta'].unique())
+    seleccion = st.multiselect('Plantas de los pendientes', plantas, default=plantas, key='backlog_plantas')
+    buscar = st.text_input('Buscar TAG en pendientes', key='backlog_tag').strip().upper()
+    vista = pendientes[pendientes['planta'].isin(seleccion) & pendientes['tag_equipo'].str.contains(buscar, regex=False)].copy()
+    a,b,c = st.columns(3)
+    a.metric('Pendientes de inspección', int(vista['Situación'].eq('Pendiente de inspección').sum()))
+    b.metric('Pendientes de informe', int(vista['Situación'].eq('Pendiente de informe').sum()))
+    c.metric('Estados por revisar', int(vista['Situación'].eq('Estado por revisar').sum()))
+    for estado in ['Pendiente de inspección', 'Pendiente de informe', 'Estado por revisar']:
+        with st.expander(estado, expanded=True):
+            detalle = vista[vista['Situación'].eq(estado)]
+            if detalle.empty:
+                st.caption('Sin registros en esta categoría.')
+            else:
+                st.dataframe(detalle, hide_index=True, use_container_width=True)
+    st.caption('Finalizada queda fuera de los pendientes. Los estados antiguos sin equivalencia segura aparecen para revisión. Equipos sin actividad registrada no se cuentan. Varios trabajos simultáneos del mismo TAG requieren un identificador de informe para contarlos por separado.')
+    st.divider()
+
+
 st.markdown("""<style>
 .block-container { max-width: 1280px; padding-top: 2.5rem; padding-bottom: 1rem; }
 [data-testid="stVerticalBlock"] { gap: .7rem; }
@@ -157,6 +210,7 @@ st.caption("Origen: Google Sheets · Indicadores_Inspeccion")
 st.sidebar.button("Actualizar datos")
 try:
     libro_kpi = conectar(st.secrets["connections"]["gsheets"])
+    mostrar_pendientes(libro_kpi)
     datos_sheets = pd.DataFrame(cargar(libro_kpi), columns=ENCABEZADOS)
     df = preparar_datos(datos_sheets)
 except Exception:
@@ -206,8 +260,13 @@ with st.expander("Registrar actividad", expanded=False):
 
 with st.sidebar:
     st.subheader("Filtros de indicadores")
-    periodos = sorted(df["Periodo"].unique(), reverse=True)
-    seleccion_periodos = st.multiselect("Año y semana ISO", periodos, default=periodos)
+    anio_actual = dt.date.today().isocalendar().year
+    anios = sorted(set(df["Año ISO"].tolist()) | {anio_actual}, reverse=True)
+    anio_elegido = st.selectbox("Año ISO", anios, key="kpi_anio")
+    total_semanas = dt.date(int(anio_elegido), 12, 28).isocalendar().week
+    periodos = [f"{anio_elegido} · S{n:02d}" for n in range(1, total_semanas + 1)]
+    seleccion_periodos = st.multiselect("Semanas ISO", periodos, default=periodos, key=f"kpi_semanas_{anio_elegido}")
+    st.caption("Se muestran todas las semanas del año. Las semanas sin registros no generan indicadores.")
     nombres = sorted(set(INSPECTORES) | set(df["Inspector"].unique()))
     seleccion_inspectores = st.multiselect("Inspectores", nombres, default=nombres)
     seleccion_estados = st.multiselect("Resultados", ESTADOS, default=ESTADOS)
@@ -222,7 +281,7 @@ filtrado = df[
 ].copy()
 
 if filtrado.empty:
-    st.info("No hay registros para esta selección. Registra una actividad o ajusta los filtros.")
+    st.info("No hay registros en Indicadores_Inspeccion para esta selección. Las actividades de la página principal se guardan en otra pestaña y se usan arriba para los pendientes.")
     st.stop()
 
 k = indicadores(filtrado)
