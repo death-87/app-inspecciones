@@ -203,9 +203,11 @@ def preparar_indicadores_actividad(datos):
     df['Semana ISO'] = iso.week
     df['Avance (%)'] = pd.to_numeric(df['avance'].str.replace('%', '', regex=False).str.replace(',', '.', regex=False), errors='coerce')
     df.loc[~df['Avance (%)'].between(0, 100), 'Avance (%)'] = float('nan')
-    estados = {'proceso de inspección': 'Pendiente de inspección',
-               'en proceso de inspección': 'Pendiente de inspección',
-               'proceso de informe': 'Pendiente de informe', 'finalizada': 'Finalizada'}
+    estados = {'pendiente de inspección': 'Proceso de inspección',
+        'pendiente de informe': 'Proceso de informe',
+        'proceso de inspección': 'Proceso de inspección',
+               'en proceso de inspección': 'Proceso de inspección',
+               'proceso de informe': 'Proceso de informe', 'finalizada': 'Finalizada'}
     df['Situación'] = df['estado_liberacion'].str.casefold().map(estados).fillna('Estado por revisar')
     # El historial se agrega por filas: coincide con la función de continuar un TAG.
     actuales = df.drop_duplicates(['_planta', 'tag_equipo'], keep='last').copy()
@@ -234,13 +236,13 @@ def mostrar_indicadores_actividad():
     st.markdown('### Pendientes actuales')
     st.caption('Acumulados de todas las semanas. El inspector corresponde al último registro de cada equipo; no necesariamente a una asignación formal.')
     cols = st.columns(4)
-    for col, estado in zip(cols, ['Pendiente de inspección', 'Pendiente de informe', 'Finalizada', 'Estado por revisar']):
+    for col, estado in zip(cols, ['Proceso de inspección', 'Proceso de informe', 'Finalizada', 'Estado por revisar']):
         col.metric(estado, int(actuales['Situación'].eq(estado).sum()))
-    pendientes = actuales[actuales['Situación'].isin(['Pendiente de inspección', 'Pendiente de informe'])]
+    pendientes = actuales[actuales['Situación'].isin(['Proceso de inspección', 'Proceso de informe'])]
     if not pendientes.empty:
         resumen = pendientes.groupby(['inspector', 'Situación']).size().reset_index(name='Equipos')
         fig = px.bar(resumen, x='Equipos', y='inspector', color='Situación', orientation='h', barmode='stack',
-                     color_discrete_map={'Pendiente de inspección': '#355C83', 'Pendiente de informe': '#C48A25'}, text='Equipos')
+                     color_discrete_map={'Proceso de inspección': '#355C83', 'Proceso de informe': '#C48A25'}, text='Equipos')
         fig.update_layout(template='plotly_white', height=330, margin=dict(t=10,b=10), yaxis_title='Inspector del último registro')
         st.plotly_chart(fig, use_container_width=True)
     with st.expander('Detalle de pendientes y estados por revisar', expanded=True):
