@@ -45,10 +45,11 @@ SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 # GESTIÓN DE AUTENTICACIÓN Y ROLES DE USUARIO
 # =========================================================
 USUARIOS_SISTEMA = {
-    "invitado": {"password": "123", "rol": "invitado", "nombre": "Visitante / Solo Lectura"},
     "jnavarrete": {"password": "Mechanix123", "rol": "operador", "nombre": "jnavarrete (Agregar Datos)"},
-    "jhernandez": {"password": "jorge2026", "rol": "operador", "nombre": "jhernandez (Agregar Datos)"},
-    "admin": {"password": "Mechanix123", "rol": "admin", "nombre": "Administrador General"}
+    "jhernandez": {"password": "ingemars", "rol": "inspector", "nombre": "Jorge Hernández"},
+    "hcastillo": {"password": "ingemars", "rol": "inspector", "nombre": "Harold Castillo"},
+    "mchirinos": {"password": "ingemars", "rol": "inspector", "nombre": "Miguel Chirinos"},
+    "asarmiento": {"password": "ingemars", "rol": "inspector", "nombre": "Arlem Sarmiento"}
 }
 
 if "autenticado" not in st.session_state:
@@ -129,6 +130,8 @@ def obtener_hoja_planificacion():
     try:
         return client.worksheet("Planificacion")
     except gspread.exceptions.WorksheetNotFound:
+        if not st.session_state.get('autenticado') or st.session_state.get('usuario_actual') != 'jnavarrete':
+            raise PermissionError('Solo jnavarrete puede crear la hoja de planificación.')
         ws = client.add_worksheet(title="Planificacion", rows=100, cols=25)
         ws.append_row([
             "planta", "tipo_informe", "circuito_equipo", "fecha_inicio", "fecha_fin", 
@@ -593,7 +596,7 @@ st.sidebar.markdown("### 🔐 Control de Acceso")
 
 if not st.session_state.autenticado:
     with st.sidebar.form("form_login"):
-        user_input = st.text_input("Usuario:")
+        user_input = st.text_input("Usuario:").strip().lower()
         pass_input = st.text_input("Contraseña:", type="password")
         btn_login = st.form_submit_button("🔑 Iniciar Sesión")
         
@@ -607,7 +610,8 @@ if not st.session_state.autenticado:
             else:
                 st.sidebar.error("❌ Usuario o contraseña incorrectos")
     
-    st.sidebar.info("ℹ️ Entrando como **Visitante** por defecto (Solo Lectura).")
+    st.info("Inicia sesión para consultar o registrar actividades.")
+    st.stop()
 else:
     st.sidebar.success(f"👤 Conectado:\n**{st.session_state.nombre_usuario}**")
     if st.sidebar.button("🚪 Cerrar Sesión"):
@@ -664,7 +668,16 @@ if personaje_bytes:
         unsafe_allow_html=True
     )
 
-rol_usuario = st.session_state.rol_actual
+# Revalidar cuentas y permisos en cada ejecución, incluso en sesiones antiguas.
+usuario_actual = st.session_state.usuario_actual
+if usuario_actual not in USUARIOS_SISTEMA:
+    st.session_state.autenticado = False
+    st.session_state.usuario_actual = None
+    st.rerun()
+rol_usuario = USUARIOS_SISTEMA[usuario_actual]['rol']
+st.session_state.rol_actual = rol_usuario
+puede_agregar_actividad = st.session_state.autenticado and usuario_actual in USUARIOS_SISTEMA
+puede_editar = st.session_state.autenticado and usuario_actual == 'jnavarrete'
 
 # =========================================================
 # MÓDULO 1: REGISTRO DE ACTIVIDADES (ESCRITURA CON REUTILIZACIÓN)
@@ -789,11 +802,11 @@ if menu == "📝 Registrar Actividad por Inspector":
         actividad_realizada = st.text_area("🛠️ Actividades Realizadas en esta jornada:", key='act_actividad', placeholder="Ej: Inspección visual de junta...")
         observaciones = st.text_area("💬 Observaciones Adicionales / Recomendaciones:", key='act_observaciones', placeholder="Escribe comentarios extra...")
         
-        btn_guardar = st.button("☁️ Guardar Nuevo Registro en Google Sheets", key='act_guardar')
+        btn_guardar = st.button("☁️ Guardar Nuevo Registro en Google Sheets", key='act_guardar', disabled=not puede_agregar_actividad)
         
         if btn_guardar:
-            if rol_usuario == "invitado":
-                st.error("❌ Acción no permitida para el rol de Visitante.")
+            if not puede_agregar_actividad:
+                st.error("No tienes permiso para agregar actividades.")
             elif tag_equipo.strip() and actividad_realizada.strip():
                 try:
                     sheet = obtener_hoja_actividades()
@@ -999,8 +1012,8 @@ elif menu == "📈 Reporte Planificación":
     st.subheader("📅 Módulo de Registro y Control de Planificación")
     st.markdown("##### *Ingrese los datos detallados de planificación para sincronizar con la nube.*")
     
-    if rol_usuario == "invitado":
-        st.warning("⚠️ Tu cuenta actual es de **Visitante (Solo Lectura)**. Puedes visualizar la planificación pero no registrar nuevos datos.")
+    if not puede_editar:
+        st.warning("⚠️ Puedes consultar la planificación. Solo jnavarrete puede registrar o modificar la planificación.")
 
     with st.form("form_planificacion", clear_on_submit=True):
         col1, col2, col3 = st.columns(3)
@@ -1033,10 +1046,10 @@ elif menu == "📈 Reporte Planificación":
 
         p_observaciones = st.text_area("💬 Observaciones:", placeholder="Notas de planificación...")
 
-        btn_guardar_plan = st.form_submit_button("☁️ Guardar Planificación en Google Sheets")
+        btn_guardar_plan = st.form_submit_button("☁️ Guardar Planificación en Google Sheets", disabled=not puede_editar)
         
         if btn_guardar_plan:
-            if rol_usuario == "invitado":
+            if not puede_editar:
                 st.error("❌ Acción no permitida para el rol de Visitante.")
             else:
                 try:
