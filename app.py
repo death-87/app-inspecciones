@@ -112,6 +112,18 @@ def obtener_hoja_actividades():
     client = conectar_google_sheets()
     return client.sheet1
 
+
+def plantas_por_tag(filas):
+    """BASE EQUIPOS: columna C = planta, columna D = TAG."""
+    resultado = {}
+    for fila in filas[1:]:
+        if len(fila) > 3 and str(fila[3]).strip():
+            tag = str(fila[3]).strip().upper()
+            planta = str(fila[2]).strip()
+            if planta:
+                resultado.setdefault(tag, set()).add(planta)
+    return {tag: sorted(plantas) for tag, plantas in resultado.items()}
+
 def obtener_hoja_planificacion():
     client = conectar_google_sheets()
     try:
@@ -629,8 +641,35 @@ if menu == "📝 Registrar Actividad por Inspector":
     if st.session_state['act_estado'] not in ESTADOS_LIBERACION:
         st.session_state['act_estado'] = ESTADOS_LIBERACION[0]
 
-    # Conservar el borrador al validar o reintentar un guardado.
-    with st.form("form_actividades_inspector", clear_on_submit=False):
+    if 'act_base_equipos' not in st.session_state:
+        try:
+            filas_base = conectar_google_sheets().worksheet('BASE EQUIPOS').get_all_values()
+            st.session_state['act_base_equipos'] = plantas_por_tag(filas_base)
+        except Exception:
+            st.warning('No se pudo leer BASE EQUIPOS. Puedes ingresar el TAG y seleccionar la planta manualmente.')
+    if st.button('Actualizar lista de equipos', key='act_actualizar_base'):
+        st.session_state.pop('act_base_equipos', None)
+        st.rerun()
+    base_equipos = st.session_state.get('act_base_equipos', {})
+    tag_actual = st.session_state['act_tag'].strip().upper()
+    opciones_tag = [''] + sorted(set(base_equipos) | ({tag_actual} if tag_actual else set()))
+    st.session_state['act_tag'] = tag_actual
+    if st.checkbox('Ingresar TAG manualmente', key='act_tag_manual'):
+        tag_equipo = st.text_input('🏷️ TAG del Equipo / Línea Piping:', key='act_tag')
+    else:
+        tag_equipo = st.selectbox('🏷️ TAG del Equipo / Línea Piping:', opciones_tag, key='act_tag')
+    tag_normalizado = tag_equipo.strip().upper()
+    plantas_tag = base_equipos.get(tag_normalizado, [])
+    if len(plantas_tag) == 1:
+        st.session_state['act_planta'] = plantas_tag[0]
+    elif len(plantas_tag) > 1:
+        st.warning('Este TAG figura en varias plantas. Selecciona la que corresponde a esta actividad.')
+    elif tag_normalizado:
+        st.caption('TAG sin planta asociada en BASE EQUIPOS. Verifica la planta manualmente.')
+    opciones_planta = list(dict.fromkeys(LISTA_PLANTAS + plantas_tag + [st.session_state['act_planta']]))
+
+    # Widgets fuera de st.form: el TAG actualiza la planta inmediatamente.
+    with st.container():
         col1, col2 = st.columns(2)
         
         with col1:
@@ -638,12 +677,11 @@ if menu == "📝 Registrar Actividad por Inspector":
             idx_plan = LISTA_PLANTAS.index(def_planta) if def_planta in LISTA_PLANTAS else 0
             
             inspector_seleccionado = st.selectbox("👷‍♂️ Seleccionar Inspector asignado:", LISTA_INSPECTORES, key='act_inspector')
-            fecha_actividad = st.date_input("📅 Fecha de Inspección:", datetime.now())
-            semana_seleccionada = st.selectbox("🗓️ Semana Operativa:", LISTA_SEMANAS, index=idx_semana_defecto)
-            planta_seleccionada = st.selectbox("🏭 Planta / Unidad:", LISTA_PLANTAS, key='act_planta')
+            fecha_actividad = st.date_input("📅 Fecha de Inspección:", datetime.now().date(), key='act_fecha')
+            semana_seleccionada = st.selectbox("🗓️ Semana Operativa:", LISTA_SEMANAS, index=idx_semana_defecto, key='act_semana')
+            planta_seleccionada = st.selectbox("🏭 Planta / Unidad:", opciones_planta, key='act_planta', disabled=len(plantas_tag) == 1)
 
         with col2:
-            tag_equipo = st.text_input("🏷️ TAG del Equipo / Línea Piping:", key='act_tag', placeholder="Ej: C-1302 / E-2101 / PIP-001")
             porcentaje_avance = st.slider("📊 Porcentaje de Avance Acumulado:", min_value=0, max_value=100, key='act_avance', step=5, format="%d%%")
             
             idx_est = ESTADOS_LIBERACION.index(def_estado) if def_estado in ESTADOS_LIBERACION else 0
@@ -652,7 +690,7 @@ if menu == "📝 Registrar Actividad por Inspector":
         actividad_realizada = st.text_area("🛠️ Actividades Realizadas en esta jornada:", key='act_actividad', placeholder="Ej: Inspección visual de junta...")
         observaciones = st.text_area("💬 Observaciones Adicionales / Recomendaciones:", key='act_observaciones', placeholder="Escribe comentarios extra...")
         
-        btn_guardar = st.form_submit_button("☁️ Guardar Nuevo Registro en Google Sheets")
+        btn_guardar = st.button("☁️ Guardar Nuevo Registro en Google Sheets", key='act_guardar')
         
         if btn_guardar:
             if rol_usuario == "invitado":
