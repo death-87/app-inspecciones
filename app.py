@@ -110,6 +110,21 @@ def conectar_google_sheets():
     return client.open_by_key(SPREADSHEET_ID)
 
 
+def normalizar_estado_actividad(valor):
+    texto = str(valor).strip()
+    equivalencias = {
+        'pendiente de inspección': 'Proceso de inspección',
+        'en proceso de inspección': 'Proceso de inspección',
+        'proceso de inspección': 'Proceso de inspección',
+        'pendiente de informe': 'Proceso de informe',
+        'en proceso de informe': 'Proceso de informe',
+        'proceso de informe': 'Proceso de informe',
+        'finalizada': 'Finalizada',
+        'finalizado': 'Finalizada',
+    }
+    return equivalencias.get(texto.casefold(), texto)
+
+
 def semana_operativa(fecha):
     """Martes a lunes: ISO de la fecha desplazada un día hacia atrás."""
     return (fecha - timedelta(days=1)).isocalendar()
@@ -175,6 +190,8 @@ def cargar_datos_sheets():
         datos = filas[1:]
         
         df = pd.DataFrame(datos, columns=encabezados)
+        if 'estado_liberacion' in df.columns:
+            df['estado_liberacion'] = df['estado_liberacion'].map(normalizar_estado_actividad)
         if 'fecha' in df.columns:
             fechas = pd.to_datetime(df['fecha'], errors='coerce')
             # Recalcular para consulta sin modificar las filas históricas de Sheets.
@@ -272,7 +289,7 @@ def mostrar_indicadores_actividad():
     with st.expander('Detalle de pendientes y estados por revisar', expanded=True):
         detalle = actuales[actuales['Situación'].ne('Finalizada')].copy()
         detalle['Días desde última actividad'] = (pd.Timestamp(datetime.now().date()) - detalle['Fecha'].dt.normalize()).dt.days
-        columnas = ['planta', 'tag_equipo', 'inspector', 'fecha', 'Situación', 'estado_liberacion', 'Avance (%)', 'Días desde última actividad']
+        columnas = ['planta', 'tag_equipo', 'inspector', 'fecha', 'estado_liberacion', 'Avance (%)', 'Días desde última actividad']
         if detalle.empty:
             st.info('Sin pendientes ni estados por revisar para esta selección.')
         else:
@@ -301,8 +318,20 @@ def mostrar_indicadores_actividad():
     a,b = st.columns(2)
     semanal = periodo.groupby('Semana operativa').size().reindex(sorted(elegidas), fill_value=0).rename('Actividades').reset_index()
     por_inspector = periodo.groupby('inspector').size().rename('Actividades').reset_index()
+    colores_inspectores = {
+        'Juan Navarrete': '#087F73',
+        'Jorge Hernandez': '#355C83', 'Jorge Hernández': '#355C83',
+        'Arlem Sarmiento': '#C48A25',
+        'Harold Castillo': '#8256AC',
+        'Miguel Chirinos': '#CC5965',
+    }
     for columna, tabla, eje, titulo in [(a,semanal,'Semana operativa','Actividad semanal'), (b,por_inspector,'inspector','Actividad por inspector')]:
-        fig = px.bar(tabla, x=eje, y='Actividades', text='Actividades', title=titulo, color_discrete_sequence=['#087F73'])
+        if eje == 'inspector':
+            fig = px.bar(tabla, x=eje, y='Actividades', text='Actividades', title=titulo,
+                         color='inspector', color_discrete_map=colores_inspectores)
+            fig.update_layout(showlegend=False)
+        else:
+            fig = px.bar(tabla, x=eje, y='Actividades', text='Actividades', title=titulo, color_discrete_sequence=['#087F73'])
         fig.update_layout(template='plotly_white', height=330, margin=dict(t=45,b=10))
         fig.update_yaxes(dtick=1)
         columna.plotly_chart(fig, use_container_width=True)
@@ -886,8 +915,7 @@ elif menu == "📊 Historial e Informes":
         with col_f4:
             filtro_tag = st.text_input("Filtrar por TAG:")
         with col_f5:
-            estados_anteriores = sorted(set(df_historial['estado_liberacion'].dropna().astype(str)) - set(ESTADOS_LIBERACION) - {''}) if 'estado_liberacion' in df_historial.columns else []
-            filtro_estado = st.selectbox("Filtrar por Estado:", ["Todos"] + ESTADOS_LIBERACION + estados_anteriores)
+            filtro_estado = st.selectbox("Filtrar por Estado:", ["Todos", "Finalizada", "Proceso de inspección", "Proceso de informe"])
 
         df_filtrado = df_historial.copy()
         
