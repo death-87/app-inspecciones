@@ -397,8 +397,8 @@ def generar_pdf(datos, solo_completados=False):
 
 def main():
     st.set_page_config(page_title="Checklist IV · En desarrollo", page_icon="☑", layout="wide")
-    if not st.session_state.get('autenticado') or st.session_state.get('usuario_actual') != 'jnavarrete':
-        st.info('Inicia sesión con jnavarrete en la página principal para abrir este formulario.')
+    if not st.session_state.get('autenticado') or st.session_state.get('usuario_actual') not in {'jnavarrete', 'jhernandez', 'hcastillo', 'mchirinos', 'asarmiento'}:
+        st.info('Inicia sesión con tu cuenta de inspector en la página principal para abrir este formulario.')
         st.stop()
     def key(nombre):
         return PREFIJO+nombre
