@@ -6,7 +6,7 @@ import pandas as pd
 import gspread
 import plotly.express as px
 from google.oauth2.service_account import Credentials
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Librerías para generación de PDF
 from reportlab.lib.pagesizes import letter
@@ -109,6 +109,23 @@ def conectar_google_sheets():
 
     return client.open_by_key(SPREADSHEET_ID)
 
+
+def semana_operativa(fecha):
+    """Martes a lunes: ISO de la fecha desplazada un día hacia atrás."""
+    return (fecha - timedelta(days=1)).isocalendar()
+
+
+def etiqueta_semana(anio, numero):
+    inicio = datetime.fromisocalendar(int(anio), int(numero), 1).date() + timedelta(days=1)
+    fin = inicio + timedelta(days=6)
+    return f"{anio} · Semana {numero:02d} ({inicio:%d/%m} al {fin:%d/%m})"
+
+
+def periodo_operativo(fecha):
+    iso = semana_operativa(fecha)
+    return etiqueta_semana(iso.year, iso.week)
+
+
 def obtener_hoja_actividades():
     client = conectar_google_sheets()
     return client.sheet1
@@ -158,6 +175,10 @@ def cargar_datos_sheets():
         datos = filas[1:]
         
         df = pd.DataFrame(datos, columns=encabezados)
+        if 'fecha' in df.columns:
+            fechas = pd.to_datetime(df['fecha'], errors='coerce')
+            # Recalcular para consulta sin modificar las filas históricas de Sheets.
+            df['semana'] = fechas.map(lambda f: periodo_operativo(f.date()) if pd.notna(f) else 'Fecha por revisar')
         return df
     except Exception as e:
         st.error(f"Error al leer la hoja de Google Sheets: {e}")
@@ -201,9 +222,9 @@ def preparar_indicadores_actividad(datos):
     df = df[df['tag_equipo'].ne('')].copy()
     df['_planta'] = df['planta'].str.upper()
     df['Fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
-    iso = df['Fecha'].dt.isocalendar()
-    df['Año ISO'] = iso.year
-    df['Semana ISO'] = iso.week
+    iso = (df['Fecha'] - pd.Timedelta(days=1)).dt.isocalendar()
+    df['Año operativo'] = iso.year
+    df['Semana operativa'] = iso.week
     df['Avance (%)'] = pd.to_numeric(df['avance'].str.replace('%', '', regex=False).str.replace(',', '.', regex=False), errors='coerce')
     df.loc[~df['Avance (%)'].between(0, 100), 'Avance (%)'] = float('nan')
     estados = {'pendiente de inspección': 'Proceso de inspección',
@@ -260,11 +281,11 @@ def mostrar_indicadores_actividad():
     st.divider()
     st.markdown('### Actividad por período')
     a,b = st.columns(2)
-    anios = sorted(set(df['Año ISO'].dropna().astype(int)) | {datetime.now().date().isocalendar().year}, reverse=True)
-    anio = a.selectbox('Año ISO', anios, key='principal_ind_anio')
+    anios = sorted(set(df['Año operativo'].dropna().astype(int)) | {semana_operativa(datetime.now().date()).year}, reverse=True)
+    anio = a.selectbox('Año operativo', anios, key='principal_ind_anio')
     semanas = list(range(1, datetime(int(anio),12,28).date().isocalendar().week + 1))
-    elegidas = b.multiselect('Semanas ISO', semanas, default=semanas, key=f'principal_ind_semanas_{anio}')
-    periodo = actividad[(actividad['Año ISO'] == anio) & actividad['Semana ISO'].isin(elegidas)].copy()
+    elegidas = b.multiselect('Semanas operativas', semanas, default=semanas, format_func=lambda n: etiqueta_semana(anio, n), key=f'principal_ind_semanas_{anio}')
+    periodo = actividad[(actividad['Año operativo'] == anio) & actividad['Semana operativa'].isin(elegidas)].copy()
     if actividad['Fecha'].isna().any():
         st.warning(f'{int(actividad["Fecha"].isna().sum())} registros tienen fecha inválida y no se incluyen en los gráficos semanales.')
     if periodo.empty:
@@ -278,9 +299,9 @@ def mostrar_indicadores_actividad():
     cols[2].metric('Avance medio registrado', 'Sin datos' if pd.isna(promedio) else f'{promedio:.1f}%')
     st.caption('Avance: último valor por equipo dentro del período seleccionado, sin sumar porcentajes de jornadas. Actividades y horas no equivalen a productividad.')
     a,b = st.columns(2)
-    semanal = periodo.groupby('Semana ISO').size().reindex(sorted(elegidas), fill_value=0).rename('Actividades').reset_index()
+    semanal = periodo.groupby('Semana operativa').size().reindex(sorted(elegidas), fill_value=0).rename('Actividades').reset_index()
     por_inspector = periodo.groupby('inspector').size().rename('Actividades').reset_index()
-    for columna, tabla, eje, titulo in [(a,semanal,'Semana ISO','Actividad semanal'), (b,por_inspector,'inspector','Actividad por inspector')]:
+    for columna, tabla, eje, titulo in [(a,semanal,'Semana operativa','Actividad semanal'), (b,por_inspector,'inspector','Actividad por inspector')]:
         fig = px.bar(tabla, x=eje, y='Actividades', text='Actividades', title=titulo, color_discrete_sequence=['#087F73'])
         fig.update_layout(template='plotly_white', height=330, margin=dict(t=45,b=10))
         fig.update_yaxes(dtick=1)
@@ -573,7 +594,8 @@ LISTA_PLANTAS = [
     "ATRAG", "AURA1", "AURA2", "AURA3", "AVAC1", "AVAC2", "ACOKE"
 ]
 
-LISTA_SEMANAS = [f"Semana {i}" for i in range(1, 53)]
+anio_operativo_actual = semana_operativa(datetime.now().date()).year
+LISTA_SEMANAS = [etiqueta_semana(anio_operativo_actual, i) for i in range(1, datetime(anio_operativo_actual, 12, 28).isocalendar().week + 1)]
 
 ESTADOS_LIBERACION = [
     "Proceso de inspección",
@@ -582,7 +604,7 @@ ESTADOS_LIBERACION = [
 ]
 
 # Cálculo de semana por defecto global
-semana_actual_num = datetime.now().isocalendar()[1]
+semana_actual_num = semana_operativa(datetime.now().date()).week
 idx_semana_defecto = max(0, min(semana_actual_num - 1, len(LISTA_SEMANAS) - 1))
 
 # =========================================================
@@ -790,7 +812,8 @@ if menu == "📝 Registrar Actividad por Inspector":
             
             inspector_seleccionado = st.selectbox("👷‍♂️ Seleccionar Inspector asignado:", LISTA_INSPECTORES, key='act_inspector')
             fecha_actividad = st.date_input("📅 Fecha de Inspección:", datetime.now().date(), key='act_fecha')
-            semana_seleccionada = st.selectbox("🗓️ Semana Operativa:", LISTA_SEMANAS, index=idx_semana_defecto, key='act_semana')
+            semana_seleccionada = periodo_operativo(fecha_actividad)
+            st.caption(f"🗓️ {semana_seleccionada} · martes a lunes, calculada desde la fecha.")
             planta_seleccionada = st.selectbox("🏭 Planta / Unidad:", opciones_planta, key='act_planta', disabled=len(plantas_tag) == 1)
 
         with col2:
@@ -849,13 +872,15 @@ elif menu == "📊 Historial e Informes":
         df_historial = cargar_datos_sheets()
     
     if not df_historial.empty:
+        anios_historial = {semana_operativa(f.date()).year for f in pd.to_datetime(df_historial['fecha'], errors='coerce').dropna()} | {anio_operativo_actual}
+        semanas_historial = [etiqueta_semana(a, n) for a in sorted(anios_historial, reverse=True) for n in range(1, datetime(a, 12, 28).isocalendar().week + 1)]
         st.markdown("### 🎛️ Filtros Interactivos de Consulta")
         col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns(5)
         
         with col_f1:
             filtro_inspector = st.selectbox("Filtrar por Inspector:", ["Todos"] + LISTA_INSPECTORES)
         with col_f2:
-            filtro_semana = st.selectbox("Filtrar por Semana:", ["Todas"] + LISTA_SEMANAS)
+            filtro_semana = st.selectbox("Filtrar por Semana:", ["Todas"] + semanas_historial)
         with col_f3:
             filtro_planta = st.selectbox("Filtrar por Planta:", ["Todas"] + LISTA_PLANTAS)
         with col_f4:
@@ -910,11 +935,11 @@ elif menu == "📊 Historial e Informes":
                 
         else: # 🗓️ Semanal
             with col_periodo:
-                semana_informe = st.selectbox("🗓️ Selecciona la Semana para el Informe:", LISTA_SEMANAS, index=idx_semana_defecto)
+                semana_informe = st.selectbox("🗓️ Selecciona la Semana para el Informe:", semanas_historial, index=semanas_historial.index(periodo_operativo(datetime.now().date())))
                 
                 titulo_doc = "REPORTE SEMANAL DE INSPECCIÓN"
                 subtitulo_doc = f"Período: {semana_informe}"
-                tag_archivo = f"SEMANAL_{semana_informe.replace(' ', '_')}"
+                tag_archivo = "SEMANAL_" + semana_informe.split(" (")[0].replace(" · ", "_").replace(" ", "_")
             
             if "semana" in df_historial.columns:
                 df_informe = df_historial[df_historial['semana'] == semana_informe]
