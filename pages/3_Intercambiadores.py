@@ -52,8 +52,8 @@ st.set_page_config(
 
 
 # Cada página debe validar la sesión antes de consultar servicios externos.
-if not st.session_state.get("autenticado", False) or st.session_state.get("usuario_actual") != "jnavarrete":
-    st.info("Acceso privado. Inicia sesión en la página principal con jnavarrete.")
+if not st.session_state.get("autenticado", False) or st.session_state.get("usuario_actual") not in {'jnavarrete', 'jhernandez', 'hcastillo', 'mchirinos', 'asarmiento'}:
+    st.info("Acceso privado. Inicia sesión en la página principal con tu cuenta de inspector.")
     st.stop()
 
 
@@ -546,6 +546,8 @@ def obtener_o_crear_hoja_historial():
 
 
 def guardar_resguardo_informe(datos_encabezado, secciones_dinamicas, drive_link, inspector_firma, fotos, esquemas):
+    if not st.session_state.get('autenticado') or st.session_state.get('usuario_actual') not in {'jnavarrete', 'jhernandez', 'hcastillo', 'mchirinos', 'asarmiento'}:
+        return False, 'Inicia sesión con una cuenta autorizada.'
     try:
         ws = obtener_o_crear_hoja_historial()
         num_inf = datos_encabezado["num_informe"].strip()
@@ -580,6 +582,8 @@ def guardar_resguardo_informe(datos_encabezado, secciones_dinamicas, drive_link,
                 break
 
         if fila_idx:
+            if st.session_state.get('usuario_actual') != 'jnavarrete':
+                return False, 'Solo jnavarrete puede modificar un informe guardado. Para crear otro, utiliza un número de informe nuevo.'
             ws.update(range_name=f"A{fila_idx}:L{fila_idx}", values=[fila_nueva], value_input_option="RAW")
             mensaje = f"✅ Informe '{num_inf}' actualizado correctamente en Google Sheets."
         else:
@@ -644,6 +648,8 @@ def cargar_datos_informe(num_informe_sel):
 
 
 def eliminar_informe_guardado(num_informe_sel):
+    if not st.session_state.get('autenticado') or st.session_state.get('usuario_actual') != 'jnavarrete':
+        return False, 'Solo jnavarrete puede eliminar informes guardados.'
     try:
         ws = obtener_o_crear_hoja_historial()
         filas = ws.get_all_values()
@@ -1194,7 +1200,7 @@ with col_acc1:
 
 with col_acc2:
     confirmar_eliminar = st.checkbox("⚠️ Confirmar eliminación", key=clave_informe("chk_eliminar"))
-    btn_eliminar = st.button("🗑️ Eliminar Informe", type="primary", use_container_width=True)
+    btn_eliminar = st.button("🗑️ Eliminar Informe", type="primary", use_container_width=True, disabled=st.session_state.get('usuario_actual') != 'jnavarrete')
 
 # LÓGICA DE CARGA
 if btn_cargar:
