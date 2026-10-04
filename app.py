@@ -182,7 +182,7 @@ def obtener_ultimo_registro_tag(tag_busqueda):
         return None
     
     # Filtrar coincidentes sin importar mayúsculas/minúsculas
-    df_tag = df_historial[df_historial['tag_equipo'].astype(str).str.upper() == tag_busqueda.strip().upper()]
+    df_tag = df_historial[df_historial['tag_equipo'].astype(str).str.strip().str.upper() == tag_busqueda.strip().upper()]
     
     if not df_tag.empty:
         # Retorna el último registro ingresado (última fila)
@@ -616,34 +616,45 @@ if menu == "📝 Registrar Actividad por Inspector":
     st.markdown("---")
 
     # 📝 FORMULARIO DE INGRESO
-    with st.form("form_actividades_inspector", clear_on_submit=True):
+    valores_actividad = {
+        'act_inspector': def_inspector, 'act_planta': def_planta,
+        'act_tag': def_tag, 'act_avance': max(0, min(100, def_avance)),
+        'act_estado': def_estado, 'act_actividad': def_actividad,
+        'act_observaciones': def_obs,
+    }
+    for clave, valor in valores_actividad.items():
+        if (btn_cargar_tag and tag_para_retomar) or clave not in st.session_state:
+            st.session_state[clave] = valor
+
+    # Conservar el borrador al validar o reintentar un guardado.
+    with st.form("form_actividades_inspector", clear_on_submit=False):
         col1, col2 = st.columns(2)
         
         with col1:
             idx_insp = LISTA_INSPECTORES.index(def_inspector) if def_inspector in LISTA_INSPECTORES else 0
             idx_plan = LISTA_PLANTAS.index(def_planta) if def_planta in LISTA_PLANTAS else 0
             
-            inspector_seleccionado = st.selectbox("👷‍♂️ Seleccionar Inspector asignado:", LISTA_INSPECTORES, index=idx_insp)
+            inspector_seleccionado = st.selectbox("👷‍♂️ Seleccionar Inspector asignado:", LISTA_INSPECTORES, key='act_inspector')
             fecha_actividad = st.date_input("📅 Fecha de Inspección:", datetime.now())
             semana_seleccionada = st.selectbox("🗓️ Semana Operativa:", LISTA_SEMANAS, index=idx_semana_defecto)
-            planta_seleccionada = st.selectbox("🏭 Planta / Unidad:", LISTA_PLANTAS, index=idx_plan)
+            planta_seleccionada = st.selectbox("🏭 Planta / Unidad:", LISTA_PLANTAS, key='act_planta')
 
         with col2:
-            tag_equipo = st.text_input("🏷️ TAG del Equipo / Línea Piping:", value=def_tag, placeholder="Ej: C-1302 / E-2101 / PIP-001")
-            porcentaje_avance = st.slider("📊 Porcentaje de Avance Acumulado:", min_value=0, max_value=100, value=def_avance, step=5, format="%d%%")
+            tag_equipo = st.text_input("🏷️ TAG del Equipo / Línea Piping:", key='act_tag', placeholder="Ej: C-1302 / E-2101 / PIP-001")
+            porcentaje_avance = st.slider("📊 Porcentaje de Avance Acumulado:", min_value=0, max_value=100, key='act_avance', step=5, format="%d%%")
             
             idx_est = ESTADOS_LIBERACION.index(def_estado) if def_estado in ESTADOS_LIBERACION else 0
-            estado_liberacion = st.selectbox("📌 Estado de la Inspección:", ESTADOS_LIBERACION, index=idx_est)
+            estado_liberacion = st.selectbox("📌 Estado de la Inspección:", ESTADOS_LIBERACION, key='act_estado')
 
-        actividad_realizada = st.text_area("🛠️ Actividades Realizadas en esta jornada:", value=def_actividad, placeholder="Ej: Inspección visual de junta...")
-        observaciones = st.text_area("💬 Observaciones Adicionales / Recomendaciones:", value=def_obs, placeholder="Escribe comentarios extra...")
+        actividad_realizada = st.text_area("🛠️ Actividades Realizadas en esta jornada:", key='act_actividad', placeholder="Ej: Inspección visual de junta...")
+        observaciones = st.text_area("💬 Observaciones Adicionales / Recomendaciones:", key='act_observaciones', placeholder="Escribe comentarios extra...")
         
         btn_guardar = st.form_submit_button("☁️ Guardar Nuevo Registro en Google Sheets")
         
         if btn_guardar:
             if rol_usuario == "invitado":
                 st.error("❌ Acción no permitida para el rol de Visitante.")
-            elif tag_equipo and actividad_realizada:
+            elif tag_equipo.strip() and actividad_realizada.strip():
                 try:
                     sheet = obtener_hoja_actividades()
                     todas_las_filas = sheet.get_all_values()
@@ -665,10 +676,13 @@ if menu == "📝 Registrar Actividad por Inspector":
                         observaciones.strip(),
                         estado_liberacion
                     ]
-                    sheet.append_row(nueva_fila)
-                    st.success(f"✅ ¡Nuevo registro de **{inspector_seleccionado}** (TAG: {tag_equipo} | Avance: {porcentaje_avance}%) guardado con éxito!")
+                    if any([str(v) for v in fila[:9]] == [str(v) for v in nueva_fila] for fila in todas_las_filas[1:]):
+                        st.info("Este registro exacto ya está guardado. Modifica los datos para registrar una nueva jornada.")
+                    else:
+                        sheet.append_row(nueva_fila, value_input_option="RAW")
+                        st.success(f"✅ ¡Nuevo registro de **{inspector_seleccionado}** (TAG: {tag_equipo} | Avance: {porcentaje_avance}%) guardado con éxito!")
                 except Exception as ex:
-                    st.error(f"❌ Ocurrió un error al guardar en la nube: {ex}")
+                    st.error("No se pudo confirmar el guardado. Los campos se conservan en esta sesión. Reintenta para comprobar si el registro ya existe.")
             else:
                 st.error("⚠️ Por favor completa los campos obligatorios: **TAG del Equipo** y **Actividades Realizadas**.")
 
