@@ -187,6 +187,102 @@ def cargar_datos_planificacion():
         st.error(f"Error al leer la hoja de Planificación: {e}")
         return pd.DataFrame()
 
+def preparar_indicadores_actividad(datos):
+    requeridas = ['fecha', 'planta', 'inspector', 'tag_equipo', 'avance', 'estado_liberacion']
+    if not set(requeridas).issubset(datos.columns):
+        raise ValueError('Faltan columnas del historial de actividades.')
+    df = datos.copy()
+    for campo in requeridas:
+        df[campo] = df[campo].fillna('').astype(str).str.strip()
+    df['tag_equipo'] = df['tag_equipo'].str.upper()
+    df = df[df['tag_equipo'].ne('')].copy()
+    df['_planta'] = df['planta'].str.upper()
+    df['Fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
+    iso = df['Fecha'].dt.isocalendar()
+    df['Año ISO'] = iso.year
+    df['Semana ISO'] = iso.week
+    df['Avance (%)'] = pd.to_numeric(df['avance'].str.replace('%', '', regex=False).str.replace(',', '.', regex=False), errors='coerce')
+    df.loc[~df['Avance (%)'].between(0, 100), 'Avance (%)'] = float('nan')
+    estados = {'proceso de inspección': 'Pendiente de inspección',
+               'en proceso de inspección': 'Pendiente de inspección',
+               'proceso de informe': 'Pendiente de informe', 'finalizada': 'Finalizada'}
+    df['Situación'] = df['estado_liberacion'].str.casefold().map(estados).fillna('Estado por revisar')
+    # El historial se agrega por filas: coincide con la función de continuar un TAG.
+    actuales = df.drop_duplicates(['_planta', 'tag_equipo'], keep='last').copy()
+    return df, actuales
+
+
+def mostrar_indicadores_actividad():
+    st.subheader('📈 Indicadores de actividades')
+    st.caption('Datos del mismo historial que Registrar actividad e Historial e Informes.')
+    st.button('Actualizar indicadores', key='principal_ind_actualizar')
+    datos = cargar_datos_sheets()
+    if datos.empty:
+        st.info('Todavía no hay actividades disponibles para calcular indicadores.')
+        return
+    try:
+        df, actuales = preparar_indicadores_actividad(datos)
+    except ValueError as exc:
+        st.error(str(exc))
+        return
+    a, b = st.columns(2)
+    plantas = a.multiselect('Plantas / unidades', sorted(df['planta'].unique()), default=sorted(df['planta'].unique()), key='principal_ind_plantas')
+    inspectores = b.multiselect('Inspectores', sorted(df['inspector'].unique()), default=sorted(df['inspector'].unique()), key='principal_ind_inspectores')
+    # Resolver el último estado ANTES de filtrar por inspector: evita revivir pendientes antiguos.
+    actuales = actuales[actuales['planta'].isin(plantas) & actuales['inspector'].isin(inspectores)].copy()
+    actividad = df[df['planta'].isin(plantas) & df['inspector'].isin(inspectores)].copy()
+    st.markdown('### Pendientes actuales')
+    st.caption('Acumulados de todas las semanas. El inspector corresponde al último registro de cada equipo; no necesariamente a una asignación formal.')
+    cols = st.columns(4)
+    for col, estado in zip(cols, ['Pendiente de inspección', 'Pendiente de informe', 'Finalizada', 'Estado por revisar']):
+        col.metric(estado, int(actuales['Situación'].eq(estado).sum()))
+    pendientes = actuales[actuales['Situación'].isin(['Pendiente de inspección', 'Pendiente de informe'])]
+    if not pendientes.empty:
+        resumen = pendientes.groupby(['inspector', 'Situación']).size().reset_index(name='Equipos')
+        fig = px.bar(resumen, x='Equipos', y='inspector', color='Situación', orientation='h', barmode='stack',
+                     color_discrete_map={'Pendiente de inspección': '#355C83', 'Pendiente de informe': '#C48A25'}, text='Equipos')
+        fig.update_layout(template='plotly_white', height=330, margin=dict(t=10,b=10), yaxis_title='Inspector del último registro')
+        st.plotly_chart(fig, use_container_width=True)
+    with st.expander('Detalle de pendientes y estados por revisar', expanded=True):
+        detalle = actuales[actuales['Situación'].ne('Finalizada')].copy()
+        detalle['Días desde última actividad'] = (pd.Timestamp(datetime.now().date()) - detalle['Fecha'].dt.normalize()).dt.days
+        columnas = ['planta', 'tag_equipo', 'inspector', 'fecha', 'Situación', 'estado_liberacion', 'Avance (%)', 'Días desde última actividad']
+        if detalle.empty:
+            st.info('Sin pendientes ni estados por revisar para esta selección.')
+        else:
+            st.dataframe(detalle[columnas], hide_index=True, use_container_width=True)
+        st.caption('Los días indican antigüedad de la última actividad, no atraso contractual. Los estados antiguos sin equivalencia segura requieren revisión.')
+    st.divider()
+    st.markdown('### Actividad por período')
+    a,b = st.columns(2)
+    anios = sorted(set(df['Año ISO'].dropna().astype(int)) | {datetime.now().date().isocalendar().year}, reverse=True)
+    anio = a.selectbox('Año ISO', anios, key='principal_ind_anio')
+    semanas = list(range(1, datetime(int(anio),12,28).date().isocalendar().week + 1))
+    elegidas = b.multiselect('Semanas ISO', semanas, default=semanas, key=f'principal_ind_semanas_{anio}')
+    periodo = actividad[(actividad['Año ISO'] == anio) & actividad['Semana ISO'].isin(elegidas)].copy()
+    if actividad['Fecha'].isna().any():
+        st.warning(f'{int(actividad["Fecha"].isna().sum())} registros tienen fecha inválida y no se incluyen en los gráficos semanales.')
+    if periodo.empty:
+        st.info('No hay actividades en las semanas seleccionadas. Los pendientes de arriba siguen mostrando el acumulado actual.')
+        return
+    ultimos_periodo = periodo.drop_duplicates(['_planta', 'tag_equipo'], keep='last')
+    cols = st.columns(3)
+    cols[0].metric('Actividades registradas', len(periodo))
+    cols[1].metric('Equipos atendidos', len(ultimos_periodo))
+    promedio = ultimos_periodo['Avance (%)'].mean()
+    cols[2].metric('Avance medio registrado', 'Sin datos' if pd.isna(promedio) else f'{promedio:.1f}%')
+    st.caption('Avance: último valor por equipo dentro del período seleccionado, sin sumar porcentajes de jornadas. Actividades y horas no equivalen a productividad.')
+    a,b = st.columns(2)
+    semanal = periodo.groupby('Semana ISO').size().reindex(sorted(elegidas), fill_value=0).rename('Actividades').reset_index()
+    por_inspector = periodo.groupby('inspector').size().rename('Actividades').reset_index()
+    for columna, tabla, eje, titulo in [(a,semanal,'Semana ISO','Actividad semanal'), (b,por_inspector,'inspector','Actividad por inspector')]:
+        fig = px.bar(tabla, x=eje, y='Actividades', text='Actividades', title=titulo, color_discrete_sequence=['#087F73'])
+        fig.update_layout(template='plotly_white', height=330, margin=dict(t=45,b=10))
+        fig.update_yaxes(dtick=1)
+        columna.plotly_chart(fig, use_container_width=True)
+    st.caption('Cada actividad cuenta como un registro. No se calculan horas porque este historial no las registra. Equipos sin actividad y trabajos simultáneos del mismo TAG requieren una base de planificación o un identificador de trabajo para un backlog completo.')
+
+
 def obtener_ultimo_registro_tag(tag_busqueda):
     """Busca el registro más reciente de un TAG en el historial de actividades."""
     df_historial = cargar_datos_sheets()
@@ -542,6 +638,7 @@ menu = st.sidebar.radio(
     [
         "📝 Registrar Actividad por Inspector", 
         "📊 Historial e Informes", 
+        "📈 Indicadores de actividades",
         "📈 Reporte Planificación"
     ]
 )
@@ -893,6 +990,9 @@ elif menu == "📊 Historial e Informes":
 # =========================================================
 # MÓDULO 3: REPORTE PLANIFICACIÓN
 # =========================================================
+elif menu == "📈 Indicadores de actividades":
+    mostrar_indicadores_actividad()
+
 elif menu == "📈 Reporte Planificación":
     st.subheader("📅 Módulo de Registro y Control de Planificación")
     st.markdown("##### *Ingrese los datos detallados de planificación para sincronizar con la nube.*")
