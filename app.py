@@ -463,11 +463,9 @@ LISTA_PLANTAS = [
 LISTA_SEMANAS = [f"Semana {i}" for i in range(1, 53)]
 
 ESTADOS_LIBERACION = [
-    "Liberado / Conforme (Aprobado)",
-    "Pendiente de Reparación",
-    "Rechazado",
-    "En Proceso de Inspección",
-    "En Espera de END / Pruebas"
+    "Proceso de inspección",
+    "Proceso de informe",
+    "Finalizada"
 ]
 
 # Cálculo de semana por defecto global
@@ -584,7 +582,7 @@ if menu == "📝 Registrar Actividad por Inspector":
     def_avance = 0
     def_actividad = ""
     def_obs = ""
-    def_estado = ESTADOS_LIBERACION[3] # "En Proceso de Inspección" por defecto
+    def_estado = ESTADOS_LIBERACION[0]
 
     if btn_cargar_tag and tag_para_retomar:
         ultimo_reg = obtener_ultimo_registro_tag(tag_para_retomar)
@@ -609,6 +607,9 @@ if menu == "📝 Registrar Actividad por Inspector":
                 def_planta = ultimo_reg.get("planta")
             if ultimo_reg.get("estado_liberacion") in ESTADOS_LIBERACION:
                 def_estado = ultimo_reg.get("estado_liberacion")
+            elif ultimo_reg.get("estado_liberacion"):
+                st.info(f"Estado anterior: {ultimo_reg.get('estado_liberacion')}. Selecciona el estado actual de esta jornada; el registro anterior se conserva.")
+            st.info(f"Inspector del registro anterior: {ultimo_reg.get('inspector', '-')}. Si continúa otra persona, selecciónala como inspector asignado antes de guardar.")
         else:
             st.warning(f"⚠️ No se encontraron registros anteriores para el TAG '{tag_para_retomar}'. Se creará uno desde cero.")
             def_tag = tag_para_retomar
@@ -625,6 +626,8 @@ if menu == "📝 Registrar Actividad por Inspector":
     for clave, valor in valores_actividad.items():
         if (btn_cargar_tag and tag_para_retomar) or clave not in st.session_state:
             st.session_state[clave] = valor
+    if st.session_state['act_estado'] not in ESTADOS_LIBERACION:
+        st.session_state['act_estado'] = ESTADOS_LIBERACION[0]
 
     # Conservar el borrador al validar o reintentar un guardado.
     with st.form("form_actividades_inspector", clear_on_submit=False):
@@ -708,7 +711,8 @@ elif menu == "📊 Historial e Informes":
         with col_f4:
             filtro_tag = st.text_input("Filtrar por TAG:")
         with col_f5:
-            filtro_estado = st.selectbox("Filtrar por Estado:", ["Todos"] + ESTADOS_LIBERACION)
+            estados_anteriores = sorted(set(df_historial['estado_liberacion'].dropna().astype(str)) - set(ESTADOS_LIBERACION) - {''}) if 'estado_liberacion' in df_historial.columns else []
+            filtro_estado = st.selectbox("Filtrar por Estado:", ["Todos"] + ESTADOS_LIBERACION + estados_anteriores)
 
         df_filtrado = df_historial.copy()
         
