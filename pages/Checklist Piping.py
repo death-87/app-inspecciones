@@ -350,7 +350,6 @@ def generar_pdf(datos, solo_completados=False):
         canvas.saveState()
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(colors.HexColor("#526579"))
-        canvas.drawString(36, 23, "Este informe no debe ser reproducido salvo en su totalidad.")
         canvas.drawRightString(576, 23, f"Página {documento.page}")
         if documento.page == 1:
             recuadro.drawOn(canvas,36,40)
