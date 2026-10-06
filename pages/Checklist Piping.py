@@ -444,6 +444,116 @@ def generar_pdf(datos, solo_completados=False):
     return buffer.getvalue()
 
 
+HISTORIAL_PIPING = 'CHECKLIST_PIPING'
+CABECERA_GUARDADO = ['numero', 'guardado_utc', 'usuario', 'circuito', 'inspector',
+                     'formato', 'sha256', 'fragmentos']
+MAX_FRAGMENTOS = 100
+TAM_FRAGMENTO = 40000
+MAX_RESPALDO = 40 * 1024 * 1024
+USUARIOS_AUTORIZADOS = {'jnavarrete', 'jhernandez', 'hcastillo', 'mchirinos', 'asarmiento'}
+
+
+def comprobar_usuario():
+    usuario = st.session_state.get('usuario_actual')
+    if not st.session_state.get('autenticado') or usuario not in USUARIOS_AUTORIZADOS:
+        raise PermissionError('Inicia sesión con una cuenta autorizada.')
+    return usuario
+
+
+def hoja_guardado(crear=False):
+    import gspread
+    from google.oauth2.service_account import Credentials
+    comprobar_usuario()
+    config = dict(st.secrets['connections']['gsheets'])
+    config['private_key'] = config['private_key'].replace('\\n', '\n')
+    credenciales = Credentials.from_service_account_info(config, scopes=[
+        'https://www.googleapis.com/auth/spreadsheets'])
+    libro = gspread.authorize(credenciales).open_by_key(SPREADSHEET_ID)
+    try:
+        hoja = libro.worksheet(HISTORIAL_PIPING)
+    except gspread.exceptions.WorksheetNotFound:
+        if not crear:
+            return None
+        hoja = libro.add_worksheet(title=HISTORIAL_PIPING, rows=1000,
+                                   cols=len(CABECERA_GUARDADO) + MAX_FRAGMENTOS)
+    encabezado = hoja.row_values(1)
+    if not encabezado and crear:
+        hoja.update(range_name='A1:H1', values=[CABECERA_GUARDADO], value_input_option='RAW')
+    elif encabezado[:8] != CABECERA_GUARDADO:
+        raise ValueError('La pestaña CHECKLIST_PIPING tiene un formato incompatible.')
+    return hoja
+
+
+def informes_guardados():
+    hoja = hoja_guardado()
+    if hoja is None:
+        return []
+    # Solo se consultan identificadores; las fotos se descargan al abrir el informe.
+    return sorted({r[0].strip().upper() for r in hoja.get('A2:A') if r and r[0].strip()})
+
+
+def codificar_guardado(datos):
+    import gzip
+    copia = validar(json.loads(json.dumps(datos)))
+    if not copia['campos']['numero'].strip():
+        raise ValueError('Completa Informe N.º antes de guardar.')
+    contenido = json.dumps(copia, ensure_ascii=False).encode('utf-8')
+    if len(contenido) > MAX_RESPALDO:
+        raise ValueError('El informe supera 40 MB. Reduce el tamaño o cantidad de fotografías.')
+    texto = base64.b64encode(gzip.compress(contenido)).decode('ascii')
+    partes = [texto[i:i+TAM_FRAGMENTO] for i in range(0, len(texto), TAM_FRAGMENTO)]
+    if len(partes) > MAX_FRAGMENTOS:
+        raise ValueError('Las fotografías exceden la capacidad de guardado. Reduce su tamaño o cantidad; puedes descargar el respaldo JSON completo.')
+    return copia, hashlib.sha256(contenido).hexdigest(), partes
+
+
+def guardar_informe(datos):
+    from datetime import datetime, timezone
+    usuario = comprobar_usuario()
+    copia, huella, partes = codificar_guardado(datos)
+    numero = copia['campos']['numero'].strip().upper()
+    hoja = hoja_guardado(crear=True)
+    existentes = {r[0].strip().upper() for r in hoja.get('A2:A') if r and r[0].strip()}
+    if numero in existentes and usuario != 'jnavarrete':
+        raise PermissionError('Solo jnavarrete puede actualizar un informe guardado. Usa otro número para crear un informe nuevo.')
+    fila = [numero, datetime.now(timezone.utc).isoformat(), usuario,
+            copia['campos']['equipo'], copia['campos']['inspector'],
+            'json-gzip-base64-v1', huella, str(len(partes))] + partes
+    # Una sola escritura por versión: evita sustituir un informe válido parcialmente.
+    # Las revisiones anteriores permanecen en la hoja; al abrir se toma la última.
+    hoja.append_row(fila, value_input_option='RAW', insert_data_option='INSERT_ROWS')
+    return numero
+
+
+def decodificar_guardado(fila):
+    import gzip
+    if len(fila) < 9 or fila[5] != 'json-gzip-base64-v1':
+        raise ValueError('El informe guardado tiene un formato incompatible.')
+    cantidad = int(fila[7])
+    if not 1 <= cantidad <= MAX_FRAGMENTOS or len(fila) < 8 + cantidad:
+        raise ValueError('El informe guardado está incompleto.')
+    comprimido = base64.b64decode(''.join(fila[8:8+cantidad]), validate=True)
+    with gzip.GzipFile(fileobj=io.BytesIO(comprimido)) as archivo:
+        contenido = archivo.read(MAX_RESPALDO + 1)
+    if len(contenido) > MAX_RESPALDO or hashlib.sha256(contenido).hexdigest() != fila[6]:
+        raise ValueError('No se pudo verificar la integridad del informe guardado.')
+    datos = validar(json.loads(contenido))
+    if datos['campos']['numero'].strip().upper() != fila[0].strip().upper():
+        raise ValueError('El número de informe guardado no coincide con su contenido.')
+    return datos
+
+
+def recuperar_informe(numero):
+    comprobar_usuario()
+    hoja = hoja_guardado()
+    if hoja is not None:
+        filas = hoja.get('A2:A')
+        for indice in range(len(filas)-1, -1, -1):
+            if filas[indice] and filas[indice][0].strip().upper() == numero.strip().upper():
+                return decodificar_guardado(hoja.row_values(indice+2))
+    raise ValueError('No se encontró el informe solicitado.')
+
+
 def main():
     st.set_page_config(page_title="Checklist Piping", page_icon="☑", layout="wide")
     if not st.session_state.get('autenticado') or st.session_state.get('usuario_actual') not in {'jnavarrete', 'jhernandez', 'hcastillo', 'mchirinos', 'asarmiento'}:
@@ -470,7 +580,7 @@ def main():
     datos['campos'].setdefault('aca','')
     st.title('Informe visual de piping · Checklist')
     st.caption('Basado en el formato IVE_PIPING · Circuitos y componentes de cañería')
-    st.info('Esta versión guarda durante la sesión. Descarga un respaldo editable para conservar campos y fotos; no escribe en Google Sheets.')
+    st.info('Guarda tu informe en Google Sheets desde la pestaña Exportar. Incluye campos, checklist, fotos y esquemas. Los cambios se guardan al pulsar Guardar informe, no automáticamente.')
     with st.expander('Nuevo informe / recuperar respaldo'):
         confirmar = st.checkbox('Descartar la edición actual', key=widget('confirmar'))
         if st.button('Nuevo checklist', disabled=not confirmar, key=widget('nuevo')):
@@ -483,6 +593,29 @@ def main():
                 recuperado = validar(json.loads(archivo.getvalue()))
             except Exception as exc:
                 st.error(f'No se pudo recuperar: {exc}')
+            else:
+                cargar(recuperado)
+    with st.expander('Abrir informe guardado en Google Sheets'):
+        if st.button('Actualizar lista de informes', key=widget('listar_guardados')):
+            try:
+                st.session_state[key('lista_guardados')] = informes_guardados()
+                if not st.session_state[key('lista_guardados')]:
+                    st.info('Todavía no hay informes de piping guardados.')
+            except Exception:
+                st.error('No se pudo consultar Google Sheets. Revisa las credenciales y el acceso a la hoja.')
+        lista = st.session_state.get(key('lista_guardados'), [])
+        numero_guardado = st.selectbox('Informe guardado', lista, index=None,
+                                      key=widget('numero_guardado'))
+        reemplazar = st.checkbox('Reemplazar la edición actual por el informe guardado',
+                                key=widget('confirmar_abrir'))
+        if st.button('Abrir informe', disabled=not numero_guardado or not reemplazar,
+                     key=widget('abrir_guardado')):
+            try:
+                recuperado = recuperar_informe(numero_guardado)
+            except ValueError as exc:
+                st.error(str(exc))
+            except Exception:
+                st.error('No se pudo abrir el informe. Revisa la conexión y los permisos de Google Sheets.')
             else:
                 cargar(recuperado)
     if st.button('Revisar informe', key=widget('revisar')):
@@ -636,6 +769,21 @@ def main():
                 datos['esquemas'].pop(n)
                 st.rerun()
     with tabs[4]:
+        st.subheader('Guardar informe en Google Sheets')
+        st.caption('Puedes guardar un borrador con su número de informe aunque tenga puntos pendientes. Solo jnavarrete puede actualizar un número existente. Las revisiones anteriores se conservan.')
+        confirmar_guardado = st.checkbox('Confirmo el guardado con este número de informe',
+                                        key=widget('confirmar_guardado'))
+        if st.button('Guardar informe', disabled=not confirmar_guardado,
+                     key=widget('guardar_sheets')):
+            try:
+                with st.spinner('Guardando informe y fotografías...'):
+                    numero = guardar_informe(datos)
+                st.success(f'Informe {numero} guardado en Google Sheets, con fotos y esquemas.')
+                st.session_state.pop(key('lista_guardados'), None)
+            except (ValueError, PermissionError) as exc:
+                st.error(str(exc))
+            except Exception:
+                st.error('No se pudo confirmar el guardado. Conserva un respaldo JSON y actualiza la lista de informes antes de reintentar. Revisa las credenciales y permisos de edición de Google Sheets.')
         respaldo = json.dumps(datos, ensure_ascii=False, indent=2).encode('utf-8')
         huella = hashlib.sha256(respaldo).hexdigest()
         st.download_button('Descargar respaldo editable', respaldo, 'checklist_piping_respaldo.json', 'application/json', key=widget('json'))
