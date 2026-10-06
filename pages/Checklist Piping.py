@@ -20,26 +20,23 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image as PDFImage
 
 PREFIJO = "checklist_piping_"
-VERSION = 1
+VERSION = 2
 INSPECTORES = ['Juan Navarrete', 'Jorge Hernández', 'Harold Castillo', 'Miguel Chirinos', 'Arlem Sarmiento']
 SPREADSHEET_ID = "1eJpQXWqe4AyyrFm_6wlnfzm-KYSGPeTtX_EWCIJYE1I"
 # Criterios de la hoja IVE_PIPING de formatos piping.xlsx.
-# Las filas rotuladas a)-h) también tienen columnas de respuesta en el modelo.
+# Los títulos de sección no son puntos evaluables.
 GRUPOS = {
     'Fugas y filtraciones': [
-        'Fugas y filtraciones',
         'Fluido de proceso',
         'Steam tracing',
         'Abrazadera o camisa de refuerzo',
     ],
     'Alineamiento': [
-        'Alineamiento',
         'Desalineamiento en cañería',
         'Desalineamiento en juntas bridadas',
         'Desaplomo / deflexión',
     ],
     'Vibraciones': [
-        'Vibraciones',
         'Voladizo de peso excesivo',
         'Soporte inadecuado',
         'Tubería unida a bombas/compresores',
@@ -47,7 +44,6 @@ GRUPOS = {
         'Desgaste externo por soporte flojo',
     ],
     'Soportes': [
-        'Soportes',
         'Zapata/patín fuera de la guía o apoyo',
         'Colgante deformado/fracturado',
         'Resorte comprimido',
@@ -57,12 +53,10 @@ GRUPOS = {
         'Deflexión entre soportes',
     ],
     'Daño mecánico': [
-        'Daño mecánico',
         'Abolladura, hendiduras, entalles',
         'Mecanizado excesivo',
     ],
     'Corrosión': [
-        'Corrosión',
         'Pernos / espárragos',
         'Intersticios con soportes',
         'Interface tierra - aire',
@@ -73,13 +67,11 @@ GRUPOS = {
         'Uniones soldadas',
     ],
     'Aislación': [
-        'Aislación',
         'Daño/penetraciones',
         'Pérdida de hermeticidad',
         'Contaminada con HC u otro',
     ],
     'Línea en general': [
-        'Línea en general',
     ],
 }
 
@@ -221,8 +213,21 @@ def nuevo():
 
 
 def validar(datos):
-    if not isinstance(datos, dict) or datos.get("version") != VERSION or datos.get("tipo") != "checklist_piping":
+    if not isinstance(datos, dict) or datos.get("version") not in (1, VERSION) or datos.get("tipo") != "checklist_piping":
         raise ValueError("El archivo no corresponde a esta versión del checklist.")
+    # Compatibilidad con respaldos anteriores: conservar observaciones de títulos.
+    if datos.get('version') == 1:
+        for grupo, contenido in datos.get('grupos', {}).items():
+            filas = contenido.get('filas', [])
+            if filas and filas[0].get('Punto') == grupo:
+                titulo = filas.pop(0)
+                nota = titulo.get('Observaciones', '')
+                if nota:
+                    contenido['observaciones'] = (contenido.get('observaciones', '') + '\n' + nota).strip()
+            for fila in filas:
+                fila['Evaluación'] = {'C': 'Conforme', 'NC': 'No conforme',
+                                      'N/A': 'Sin evaluar'}.get(fila.get('Evaluación'), fila.get('Evaluación'))
+        datos['version'] = VERSION
     base = nuevo()
     datos['campos'].setdefault('descripcion', '')
     datos['campos'].setdefault('aca', '')
@@ -243,7 +248,7 @@ def validar(datos):
         if [r.get("Punto") for r in filas] != puntos:
             raise ValueError("Los puntos del checklist no coinciden.")
         for fila in filas:
-            if fila.get("Respuesta") not in ("Sin evaluar", "Sí", "No", "N/A") or fila.get("Evaluación") not in ("Sin evaluar", "C", "NC", "N/A"):
+            if fila.get("Respuesta") not in ("Sin evaluar", "Sí", "No", "N/A") or fila.get("Evaluación") not in ("Sin evaluar", "Conforme", "No conforme"):
                 raise ValueError("Respuesta de checklist no válida.")
             if not isinstance(fila.get("Observaciones"), str):
                 raise ValueError("Observación no válida.")
@@ -268,9 +273,7 @@ def inconsistencias(datos):
     problemas = []
     for grupo, contenido in datos["grupos"].items():
         for fila in contenido["filas"]:
-            if (fila["Respuesta"] == "N/A") != (fila["Evaluación"] == "N/A"):
-                problemas.append(f'{grupo}: {fila["Punto"]} - marca N/A en ambas columnas.')
-            if fila["Evaluación"] == "NC" and not fila["Observaciones"].strip():
+            if fila["Evaluación"] == "No conforme" and not fila["Observaciones"].strip():
                 problemas.append(f'{grupo}: {fila["Punto"]} - añade observación para NC.')
     return problemas
 
@@ -286,9 +289,7 @@ def revisar_informe(datos, solo_completados=False):
             if solo_completados and fila['Respuesta'] != 'Sí':
                 continue
             mensajes = []
-            if (fila['Respuesta'] == 'N/A') != (fila['Evaluación'] == 'N/A'):
-                mensajes.append('Marca N/A en ambas columnas o corrige la que no corresponde.')
-            if fila['Evaluación'] == 'NC' and not fila['Observaciones'].strip():
+            if fila['Evaluación'] == 'No conforme' and not fila['Observaciones'].strip():
                 mensajes.append('Añade una observación que explique la no conformidad.')
             for mensaje in mensajes:
                 errores.append({'seccion': grupo, 'campo': fila['Punto'],
@@ -408,7 +409,7 @@ def generar_pdf(datos, solo_completados=False):
         for fila in contenido['filas']:
             respuesta, evaluacion = fila['Respuesta'], fila['Evaluación']
             filas.append([p(fila['Punto']), 'X' if respuesta=='Sí' else '', 'X' if respuesta=='No' else '',
-                          'X' if respuesta=='N/A' or evaluacion=='N/A' else '', 'X' if evaluacion=='C' else '', 'X' if evaluacion=='NC' else '', p(fila['Observaciones'])])
+                          'X' if respuesta=='N/A' else '', 'X' if evaluacion=='Conforme' else '', 'X' if evaluacion=='No conforme' else '', p(fila['Observaciones'])])
         tabla = Table(filas, colWidths=[208,24,24,24,24,24,212], repeatRows=1)
         tabla.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#E4EEDD')), ('GRID',(0,0),(-1,-1),.4,colors.HexColor('#AAB8B1')),
             ('VALIGN',(0,0),(-1,-1),'TOP'),('ALIGN',(1,1),(5,-1),'CENTER'),('FONTSIZE',(0,0),(-1,-1),8),('TOPPADDING',(0,0),(-1,-1),1.5),('BOTTOMPADDING',(0,0),(-1,-1),1.5)]))
@@ -463,7 +464,7 @@ def main():
         st.session_state.pop(key('pdf'), None)
         st.session_state[key('revision_activa')] = False
         st.rerun()
-    datos = st.session_state[key('datos')]
+    datos = validar(st.session_state[key('datos')])
     datos.setdefault('esquemas', [])
     datos['campos'].setdefault('descripcion','')
     datos['campos'].setdefault('aca','')
@@ -554,7 +555,7 @@ def main():
         else:
             campos['ingeniero'] = 'Gabriel Allendes V.'
     with tabs[2]:
-        st.caption('Respuesta: Sí / No / N/A. Evaluación: C / NC / N/A. Sí no significa Conforme: describe la presencia del aspecto consultado. Nada se marca automáticamente.')
+        st.caption('Respuesta: Sí / No / N/A. Evaluación: Conforme / No conforme. Sí no significa Conforme: describe la presencia del aspecto consultado. Nada se marca automáticamente.')
         for n,(grupo, contenido) in enumerate(datos['grupos'].items()):
             fondo, acento = TONOS_GRUPOS[n % len(TONOS_GRUPOS)]
             panel = key(f'grupo_color_{n}')
@@ -565,11 +566,12 @@ def main():
             </style>''', unsafe_allow_html=True)
             with st.container(key=panel):
                 with st.expander(grupo, expanded=True):
-                    editado = st.data_editor(pd.DataFrame(contenido['filas']), hide_index=True, disabled=['Punto'], num_rows='fixed', width='stretch',
-                        column_config={'Respuesta': st.column_config.SelectboxColumn(options=['Sin evaluar','Sí','No','N/A'], required=True),
-                                       'Evaluación': st.column_config.SelectboxColumn(options=['Sin evaluar','C','NC','N/A'], required=True),
-                                       'Observaciones': st.column_config.TextColumn(width='large')}, key=widget(f'editor_{n}'))
-                    contenido['filas'] = editado.fillna('').to_dict('records')
+                    if contenido['filas']:
+                        editado = st.data_editor(pd.DataFrame(contenido['filas'], columns=['Punto', 'Respuesta', 'Evaluación', 'Observaciones']), hide_index=True, disabled=['Punto'], num_rows='fixed', width='stretch',
+                            column_config={'Respuesta': st.column_config.SelectboxColumn(options=['Sin evaluar','Sí','No','N/A'], required=True),
+                                           'Evaluación': st.column_config.SelectboxColumn(options=['Sin evaluar','Conforme','No conforme'], required=True),
+                                           'Observaciones': st.column_config.TextColumn(width='large')}, key=widget(f'editor_{n}'))
+                        contenido['filas'] = editado.fillna('').to_dict('records')
                     contenido['observaciones'] = st.text_area('Observaciones del grupo', value=contenido['observaciones'], key=widget(f'obs_{n}'))
                     avisos_grupos[grupo] = st.empty()
     with tabs[3]:
